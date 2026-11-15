@@ -15,17 +15,13 @@ bin_path = "bin"
 # Swift, swiftc, SDKs, actool, assetutil, notarytool, and stapler come from Xcode.
 # macOS supplies git, make, sh, codesign, security, ditto, hdiutil, iconutil,
 # plutil, shasum, spctl, and open. Do not replace those with standalone packages.
-[vars]
-xcode = "26.3"
-
 [env]
-SCHNAPS_XCODE_VERSION = "{{ env.SCHNAPS_XCODE_VERSION | default(value=vars.xcode) }}"
-DEVELOPER_DIR = "{{ env.DEVELOPER_DIR | default(value='/Applications/Xcode_' ~ vars.xcode ~ '.app/Contents/Developer') }}"
+DEVELOPER_DIR = "{{ env.DEVELOPER_DIR | default(value='/Applications/Xcode.app/Contents/Developer') }}"
 
 [tasks.setup]
 description = "Check the Apple toolchain and resolve pinned Swift packages"
 run = [
-  'test "$(xcodebuild -version | head -n 1)" = "Xcode $SCHNAPS_XCODE_VERSION" || { echo "Install/select Xcode $SCHNAPS_XCODE_VERSION (see README.md)" >&2; exit 1; }',
+  "sh Scripts/check-xcode.sh",
   "swift package resolve",
 ]
 
