@@ -553,10 +553,10 @@ final class DesignCanvas: NSView {
       if floatingLabelRect(tool).contains(point) { return (tool, false) }
     }
     // Pointer-following visuals cannot be chased; their stable labels are always grabbable.
-    if state.loupe, state.frozenLoupe != nil, loupeRect(at: floatingPoint(.loupe)).contains(point) {
+    if floatingEnabled(.loupe), state.frozenLoupe != nil, loupeRect(at: floatingPoint(.loupe)).contains(point) {
       return (.loupe, false)
     }
-    if state.crosshair, state.frozenCrosshair != nil {
+    if floatingEnabled(.crosshair), state.frozenCrosshair != nil {
       let anchor = floatingPoint(.crosshair)
       if abs(anchor.x - point.x) < 8 || abs(anchor.y - point.y) < 8 { return (.crosshair, false) }
     }

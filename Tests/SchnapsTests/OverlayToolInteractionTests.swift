@@ -316,3 +316,22 @@ func pinnedDistanceLabelsMoveAndCloseOnlyTheirSpans(paired: Bool) throws {
     }
   }
 }
+
+@Test(arguments: [DesignTool.loupe, .crosshair]) @MainActor
+func frozenFloatingToolsOnlyInterceptTheirOwningDisplay(tool: DesignTool) throws {
+  let screen = try #require(NSScreen.main)
+  let name = "Schnaps.FloatingDisplayInput.Tests." + UUID().uuidString
+  let defaults = try #require(UserDefaults(suiteName: name))
+  defer { defaults.removePersistentDomain(forName: name) }
+  let state = DesignTools(defaults: defaults)
+  state.editing = true
+  state.loupe = tool == .loupe
+  state.crosshair = tool == .crosshair
+  let bounds = CGRect(x: 0, y: 0, width: 800, height: 600)
+  let canvas = DesignCanvas(frame: bounds, screen: screen, state: state)
+  let offscreen = CGPoint(x: screen.frame.minX + 1000, y: screen.frame.maxY - 200)
+  if tool == .loupe { state.frozenLoupe = offscreen } else { state.frozenCrosshair = offscreen }
+  // An offscreen loupe would be clamped to the right edge; a crosshair would pass y=200.
+  let point = tool == .loupe ? CGPoint(x: 740, y: 250) : CGPoint(x: 100, y: 200)
+  #expect(canvas.cursor(at: point) == nil)
+}
