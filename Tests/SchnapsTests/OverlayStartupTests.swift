@@ -20,6 +20,13 @@ private func testSnapshot() throws -> ScreenSnapshot {
 struct OverlayStartupTests {
     @Test func overlayAppearsBeforeCaptureAndIgnoresCancelledCapture() async throws {
         _ = NSApplication.shared
+        let defaults = UserDefaults.standard
+        let previousFreeze = defaults.object(forKey: PreferenceKey.freezeScreen)
+        defaults.set(true, forKey: PreferenceKey.freezeScreen)
+        defer {
+            if let previousFreeze { defaults.set(previousFreeze, forKey: PreferenceKey.freezeScreen) }
+            else { defaults.removeObject(forKey: PreferenceKey.freezeScreen) }
+        }
         let screen = try #require(NSScreen.screens.first)
         let id = try #require(screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber).uint32Value
         let snapshot = try testSnapshot()
@@ -42,6 +49,8 @@ struct OverlayStartupTests {
         #expect(controller.isActive)
         #expect(controller.windows.count == NSScreen.screens.count)
         #expect(controller.windows.allSatisfy { $0.isVisible })
+        #expect(controller.windows.allSatisfy { $0.styleMask.contains(.nonactivatingPanel) })
+        #expect(controller.windows.allSatisfy { !$0.canBecomeKey && !$0.canBecomeMain })
         #expect(gates.isEmpty) // Presentation is synchronous; capture has not even started.
         #expect(await starts.next() == 0)
         controller.stop()
@@ -50,10 +59,39 @@ struct OverlayStartupTests {
         gates[0].resume()
         #expect(await finishes.next() == 0)
         #expect(controller.windows.allSatisfy { ($0.contentView as? MeasurementView)?.captureSnapshot == nil })
+        #expect(controller.windows.allSatisfy { !$0.canBecomeKey })
         gates[1].resume()
         #expect(await finishes.next() == 1)
         let view = try #require(controller.windows.first { $0.screen == screen }?.contentView as? MeasurementView)
         #expect(view.captureSnapshot != nil)
+        #expect(controller.windows.allSatisfy { $0.canBecomeKey && $0.canBecomeMain })
+    }
+
+    @Test(arguments: [true, false])
+    func frozenOverlayAcceptsKeyboardWhenCaptureIsUnavailable(permissionGranted: Bool) async throws {
+        _ = NSApplication.shared
+        let defaults = UserDefaults.standard
+        let previousFreeze = defaults.object(forKey: PreferenceKey.freezeScreen)
+        defaults.set(true, forKey: PreferenceKey.freezeScreen)
+        defer {
+            if let previousFreeze { defaults.set(previousFreeze, forKey: PreferenceKey.freezeScreen) }
+            else { defaults.removeObject(forKey: PreferenceKey.freezeScreen) }
+        }
+        struct CaptureFailure: Error {}
+        let attempted = AsyncStream<Void>.makeStream()
+        var attempts = attempted.stream.makeAsyncIterator()
+        let controller = OverlayController(captureScreens: { throw CaptureFailure() },
+                                           canCapture: {
+                                               attempted.continuation.yield(())
+                                               return permissionGranted
+                                           })
+        defer { controller.stop() }
+        controller.toggle(mode: .area)
+        #expect(controller.windows.allSatisfy { !$0.canBecomeKey })
+        // The capture task must release focus even on errors or denied permission.
+        _ = await attempts.next()
+        #expect(!controller.windows.isEmpty)
+        #expect(controller.windows.allSatisfy { $0.canBecomeKey && $0.canBecomeMain })
     }
 
     @Test func areaBorderKeepsOverlayColorAcrossBackgroundsAndHonorsExplicitColorSwitch() throws {
