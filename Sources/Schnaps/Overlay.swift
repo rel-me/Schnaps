@@ -42,9 +42,10 @@ final class OverlayController: NSObject {
         previousApp = NSWorkspace.shared.frontmostApplication
         let token = UUID()
         generation = token
+        let freeze = UserDefaults.standard.bool(forKey: PreferenceKey.freezeScreen)
         for screen in NSScreen.screens {
             let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
-            let window = OverlayWindow(screen: screen, freeze: UserDefaults.standard.bool(forKey: PreferenceKey.freezeScreen))
+            let window = OverlayWindow(screen: screen, freeze: freeze)
             let view = MeasurementView(frame: CGRect(origin: .zero, size: screen.frame.size),
                                        scale: screen.backingScaleFactor, snapshot: nil, mode: mode)
             view.pinned = (saved[id] ?? []).map { $0.intersection(view.bounds) }.filter { !$0.isNull && !$0.isEmpty }
@@ -67,9 +68,7 @@ final class OverlayController: NSObject {
             window.orderFrontRegardless()
             windows.append(window)
         }
-        if UserDefaults.standard.bool(forKey: PreferenceKey.freezeScreen) { NSApp.activate(ignoringOtherApps: true) }
-        let target = windows.first { $0.frame.contains(NSEvent.mouseLocation) } ?? windows.first
-        target?.makeKeyAndOrderFront(nil)
+        if !freeze { focusWindows(activate: false) }
         for window in windows {
             guard let view = window.contentView as? MeasurementView else { continue }
             view.initializePointer()
@@ -77,7 +76,15 @@ final class OverlayController: NSObject {
         // Present the canvas before ScreenCaptureKit enumerates and captures displays.
         // The capture filter excludes our overlays, so they never enter the snapshot.
         captureTask = Task { [weak self] in
-            guard let self, self.canCapture() else { return }
+            guard let self else { return }
+            // Activating or taking key focus can dismiss another app's dropdown.
+            // Keep it intact until its frozen image is installed on every display.
+            defer {
+                if freeze, self.generation == token, !Task.isCancelled {
+                    self.focusWindows(activate: true)
+                }
+            }
+            guard self.canCapture() else { return }
             do {
                 let snapshots = try await self.captureScreens()
                 guard self.generation == token, !Task.isCancelled else { return }
@@ -96,6 +103,16 @@ final class OverlayController: NSObject {
             guard self.generation == token, !Task.isCancelled else { return }
             self.startLiveCapture(token: token)
         }
+    }
+
+    private func focusWindows(activate: Bool) {
+        for window in windows {
+            window.acceptsMeasurementFocus = true
+            window.displayIfNeeded()
+        }
+        if activate { NSApp.activate(ignoringOtherApps: true) }
+        let target = windows.first { $0.frame.contains(NSEvent.mouseLocation) } ?? windows.first
+        target?.makeKeyAndOrderFront(nil)
     }
 
     func stop() {
@@ -177,8 +194,11 @@ final class OverlayController: NSObject {
 }
 
 final class OverlayWindow: NSPanel {
+    var acceptsMeasurementFocus: Bool
+
     init(screen: NSScreen, freeze: Bool) {
-        super.init(contentRect: screen.frame, styleMask: freeze ? [.borderless] : [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        acceptsMeasurementFocus = !freeze
+        super.init(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         setFrame(screen.frame, display: true)
         backgroundColor = .clear
         isOpaque = false
@@ -192,8 +212,8 @@ final class OverlayWindow: NSPanel {
         isRestorable = false
         hidesOnDeactivate = false
     }
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { true }
+    override var canBecomeKey: Bool { acceptsMeasurementFocus }
+    override var canBecomeMain: Bool { acceptsMeasurementFocus }
 }
 
 @MainActor
