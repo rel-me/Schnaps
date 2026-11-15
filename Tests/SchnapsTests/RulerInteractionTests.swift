@@ -204,3 +204,43 @@ func markerLabelsDragAndCloseWithoutAffectingOtherMarkers(tool: DesignTool) thro
     tools.visible = true
   }
 }
+
+@Test @MainActor func rulerCaptionsStayClearOfRotatedRulersAndScreenEdges() throws {
+  let screen = try #require(NSScreen.main)
+  let name = "Schnaps.RulerCaption.Tests." + UUID().uuidString
+  let defaults = try #require(UserDefaults(suiteName: name))
+  defer { defaults.removePersistentDomain(forName: name) }
+  let tools = DesignTools(defaults: defaults)
+  tools.visible = true
+  tools.editing = true
+  let bounds = CGRect(x: 0, y: 0, width: 800, height: 600)
+  let canvas = DesignCanvas(frame: bounds, screen: screen, state: tools)
+  for origin in [CGPoint(x: 400, y: 300), CGPoint(x: 2, y: 2),
+    CGPoint(x: 798, y: 2), CGPoint(x: 2, y: 598), CGPoint(x: 798, y: 598)] {
+    for angle in stride(from: 0.0, to: 360.0, by: 15) {
+      var marker = DesignMarker(tool: .ruler, display: DesignTools.displayID(screen))
+      marker.x = origin.x
+      marker.y = origin.y
+      marker.angle = angle
+      tools.markers = [marker]
+      let label = try #require(canvas.markerLabelRect(for: marker))
+      let button = try #require(canvas.removeButtonRect(for: marker))
+      let controls = label.union(button)
+      #expect(bounds.contains(controls))
+      // Every corner must be beyond the ruler's band on the same side of its axis.
+      let radians = angle * .pi / 180
+      let distances = [CGPoint(x: controls.minX, y: controls.minY),
+        CGPoint(x: controls.maxX, y: controls.minY),
+        CGPoint(x: controls.minX, y: controls.maxY),
+        CGPoint(x: controls.maxX, y: controls.maxY)].map {
+          -sin(radians) * ($0.x - origin.x) + cos(radians) * ($0.y - origin.y)
+        }
+      #expect(distances.allSatisfy { $0 >= 21.999 } || distances.allSatisfy { $0 <= -21.999 })
+      #expect(canvas.editableMarker(at: CGPoint(x: label.midX, y: label.midY))?.id == marker.id)
+      #expect(canvas.cursor(at: CGPoint(x: button.midX, y: button.midY)) === NSCursor.pointingHand)
+      tools.editing = false
+      #expect(canvas.markerLabelRect(for: marker) == label)
+      tools.editing = true
+    }
+  }
+}

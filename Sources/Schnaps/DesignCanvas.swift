@@ -126,7 +126,14 @@ final class DesignCanvas: NSView {
   }
   func markerLabelRect(for marker: DesignMarker) -> CGRect? {
     guard let (text, point) = markerCaption(marker) else { return nil }
-    return captionRect(text, at: point, trailingSpace: 28)
+    let label = captionRect(text, at: point, trailingSpace: 28)
+    guard marker.tool == .ruler else { return label }
+    // Reserve the remove button even when editing is disabled so the label stays put.
+    let controls = CGRect(x: label.minX, y: label.midY - 12,
+      width: label.width + 27, height: max(24, label.height))
+    let placed = RulerCaptionPlacement.rect(preferred: controls,
+      origin: CGPoint(x: marker.x, y: marker.y), angle: marker.angle, bounds: bounds)
+    return label.offsetBy(dx: placed.minX - controls.minX, dy: placed.minY - controls.minY)
   }
   func removeButtonRect(for marker: DesignMarker) -> CGRect? {
     guard state.editing, !marker.locked, let label = markerLabelRect(for: marker) else { return nil }
