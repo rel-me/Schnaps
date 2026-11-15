@@ -105,7 +105,7 @@ struct SettingsView: View {
     @AppStorage(PreferenceKey.screenshotScale) private var screenshotScale: Bool = false
     @AppStorage(PreferenceKey.screenshotSound) private var screenshotSound: Bool = true
     @AppStorage(PreferenceKey.screenshotCopySound) private var screenshotCopySound = ScreenshotSound.pop.rawValue
-    @AppStorage(PreferenceKey.screenshotSaveSound) private var screenshotSaveSound = ScreenshotSound.tink.rawValue
+    @AppStorage(PreferenceKey.screenshotSaveSound) private var screenshotSaveSound = ScreenshotSound.purr.rawValue
     @AppStorage(PreferenceKey.screenshotPadding) private var screenshotPadding: Int = 0
     @AppStorage(PreferenceKey.screenshotFolder) private var screenshotFolder: String = NSHomeDirectory()+"/Desktop"
     @AppStorage(PreferenceKey.appearance) private var appearance: String = "system"

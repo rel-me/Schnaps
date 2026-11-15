@@ -7,7 +7,7 @@ enum ScreenshotSound: String, CaseIterable {
 
     static func selected(forCopy copy: Bool = true, in defaults: UserDefaults = .standard) -> Self {
         let key = copy ? PreferenceKey.screenshotCopySound : PreferenceKey.screenshotSaveSound
-        return Self(rawValue: defaults.string(forKey: key) ?? "") ?? (copy ? .pop : .tink)
+        return Self(rawValue: defaults.string(forKey: key) ?? "") ?? (copy ? .pop : .purr)
     }
 
     @MainActor func play() {

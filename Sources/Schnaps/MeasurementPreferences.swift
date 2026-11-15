@@ -14,7 +14,7 @@ enum MeasurementPreferences {
         PreferenceKey.freezeScreen: true, PreferenceKey.screenshotFormat: "png", PreferenceKey.screenshotScale: false,
         PreferenceKey.screenshotSound: true, PreferenceKey.screenshotPadding: 0,
         PreferenceKey.screenshotCopySound: ScreenshotSound.pop.rawValue,
-        PreferenceKey.screenshotSaveSound: ScreenshotSound.tink.rawValue,
+        PreferenceKey.screenshotSaveSound: ScreenshotSound.purr.rawValue,
         PreferenceKey.screenshotFolder: FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first!
             .path,
         PreferenceKey.appearance: "system", PreferenceKey.animations: true,
