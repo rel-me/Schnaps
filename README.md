@@ -67,7 +67,7 @@ Screen images stay in memory on your Mac unless you explicitly copy or save a sc
 
 ## Build from source
 
-Install [mise](https://mise.jdx.dev/getting-started.html) **2026.8.8** and Xcode **26.3** (including its additional components and accepted license). Place Xcode at `/Applications/Xcode_26.3.app`, then run from the repository root:
+Install [mise](https://mise.jdx.dev/getting-started.html) **2026.8.8** and Xcode (including its additional components and accepted license). Place Xcode at `/Applications/Xcode.app`, then run from the repository root:
 
 ```sh
 mise trust
@@ -77,9 +77,9 @@ mise run test
 mise exec -- make dev
 ```
 
-`mise.toml` and `mise.lock` pin Node/npm, Python, GitHub CLI, Wrangler, and the WebP encoders for both Apple Silicon and Intel. It also selects Xcode through `DEVELOPER_DIR`, keeping Swift, the macOS SDK, asset compilers, and signing/notarization tools together. Git, Make, shell commands, and macOS utilities come with macOS/Xcode. Sparkle and its release tools are pinned by SwiftPM. Signing identities, notarization credentials, and GitHub/Cloudflare authentication must be configured per developer.
+`mise.toml` and `mise.lock` pin Node/npm, Python, GitHub CLI, Wrangler, and the WebP encoders for both Apple Silicon and Intel. It also selects the installed Xcode through `DEVELOPER_DIR`, keeping Swift, the macOS SDK, asset compilers, and signing/notarization tools together. Git, Make, shell commands, and macOS utilities come with macOS/Xcode. Sparkle and its release tools are pinned by SwiftPM. Signing identities, notarization credentials, and GitHub/Cloudflare authentication must be configured per developer.
 
-Activate mise in your shell to use the commands below directly, or prefix them with `mise exec --`. For Xcode installed elsewhere, export `DEVELOPER_DIR=/path/to/Xcode.app/Contents/Developer` before running mise. To intentionally test another Xcode version, also export `SCHNAPS_XCODE_VERSION` to its version; CI uses this override for its Xcode 16.4 compatibility job. `mise run setup` checks the selected version before resolving packages. CI installs the same pinned tools through `jdx/mise-action`.
+Activate mise in your shell to use the commands below directly, or prefix them with `mise exec --`. For Xcode installed elsewhere, export `DEVELOPER_DIR=/path/to/Xcode.app/Contents/Developer` before running mise. Local builds use the installed Xcode version; CI explicitly selects and checks Xcode 16.4 and 26.3. Set `SCHNAPS_XCODE_VERSION` to require an exact version during `mise run setup`. CI installs the same pinned tools through `jdx/mise-action`. If an already-active shell still reports the removed `/Applications/Xcode_26.3.app` path, run `unset DEVELOPER_DIR SCHNAPS_XCODE_VERSION` and then `mise exec -- xcodebuild -version` to reload the default.
 
 Run `make dev` to build, install, and launch `/Applications/SchnapsDebug.app`. Repeating the command quits the previous debug instance and replaces it at the same path. Debug uses its own bundle identifier (`com.gabrielhandford.Schnap.debug`), settings, and privacy permissions, separate from the release app.
 
