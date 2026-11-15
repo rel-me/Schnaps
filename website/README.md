@@ -5,16 +5,16 @@ A buildless static site at https://getschnaps.com, hosted on Cloudflare Workers 
 Preview from the repository root:
 
 ```sh
-python3 -m http.server 5173 --directory website/dist
+mise exec -- python3 -m http.server 5173 --directory website/dist
 ```
 
-Deploy from `website/` with `npx wrangler deploy`, using the authenticated Cloudflare account. `wrangler.jsonc` retains the existing custom domain. No secrets are stored in the website source. The download goes through `/download`, which resolves the latest stable alias to a first-party immutable archive proxy. Actual first-party transfer starts are counted separately in the multi-app dashboard.
+Install the pinned tools with `mise trust && mise install` from the repository root (see the [source setup guide](../README.md#build-from-source)). Deploy from `website/` with `mise exec -- wrangler deploy`, using the authenticated Cloudflare account. `wrangler.jsonc` retains the existing custom domain. No secrets are stored in the website source. The download goes through `/download`, which resolves the latest stable alias to a first-party immutable archive proxy. Actual first-party transfer starts are counted separately in the multi-app dashboard.
 
 ## Demo and branding
 
 The homepage animation renders the editorial drawing through the app’s unmodified `MeasurementView`, snapshot model, and edge detector. `Scripts/render-native-hover.swift` replays pointer movement, an area drag, and Space-to-pin directly into an offscreen native view. It does not launch or send input to another application. Every frame starts from the clean drawing source; no screen-capture cursor or cursor artwork is composited into the animation. High tolerance skips faint paper rules so both distance axes remain visible.
 
-Run `swift Scripts/render-native-hover.swift` to regenerate all seven source frames. Then run `swift Scripts/export-drawing-demo.swift` to encode them using `website/media-source/drawing-frames/timeline.json`. The exporter only clears the edge-connected backdrop and encodes WebP; it does not draw measurement UI. The transparent animation and Find Dimensions poster remain 880 × 1040 px, displayed at no more than 400 CSS pixels wide. Pause/play, reduced-motion still behavior, and a no-JavaScript poster remain available. WebP tools (`img2webp`, `cwebp`) are required.
+Run `swift Scripts/render-native-hover.swift` to regenerate all seven source frames. Then run `swift Scripts/export-drawing-demo.swift` to encode them using `website/media-source/drawing-frames/timeline.json`. The exporter only clears the edge-connected backdrop and encodes WebP; it does not draw measurement UI. The transparent animation and Find Dimensions poster remain 880 × 1040 px, displayed at no more than 400 CSS pixels wide. Pause/play, reduced-motion still behavior, and a no-JavaScript poster remain available. WebP tools (`img2webp`, `cwebp`) are installed by `mise install`; activate mise or run exporters with `mise exec -- swift …`.
 
 The clean drawing is `Assets/Previews/Schnaps-Drawing-Subject.png`, generated with `swift Scripts/export-illustrated-demo.swift --subject-only`. Earlier Calculator captures remain in `media-source/demo-frames/` as design sources for existing product media exports.
 
@@ -54,7 +54,7 @@ These historical counters counted GET requests to `/download`, not completed dow
 
 Only a fixed source category, UTC day, and aggregate counter are stored in D1. No IP, user agent, cookie, full URL, or referrer is stored by this counter. Download redirects are never cached. They are no longer written by the new Worker. The existing Web Analytics regional setting is unchanged; aggregate download counting runs on the server for all regions.
 
-On a new environment, apply `npx wrangler d1 migrations apply schnaps-downloads --remote` before deploying. Test the handler with `node --test website/tests/downloads.test.mjs` from the repository root. The SQL counters use an atomic D1 batch to keep total, source, and daily counts consistent.
+On a new environment, apply `mise exec -- wrangler d1 migrations apply schnaps-downloads --remote` before deploying. Test the handler with `node --test website/tests/downloads.test.mjs` from the repository root. The SQL counters use an atomic D1 batch to keep total, source, and daily counts consistent.
 
 ## Multi-app operations dashboard
 

@@ -15,21 +15,18 @@ jobs:
           - xcode: '26.3'
             runner: macos-26
     runs-on: ${{ matrix.runner }}
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_${{ matrix.xcode }}.app/Contents/Developer
+      SCHNAPS_XCODE_VERSION: ${{ matrix.xcode }}
     steps:
       - uses: actions/checkout@v4
-      - name: Select Xcode ${{ matrix.xcode }}
-        run: sudo xcode-select -s /Applications/Xcode_${{ matrix.xcode }}.app/Contents/Developer
-      - name: Test measurement geometry and edge detection
-        run: swift test
-      - name: Check release script syntax and website JavaScript
-        run: |
-          swiftc -typecheck Scripts/release.swift
-          make build/tools/schnaps-release
-          python3 Scripts/test-release-source.py
-          python3 Scripts/test-notarization-preflight.py
-          swiftc -swift-version 6 -typecheck Scripts/export-demo.swift
-          node --check website/dist/site.js
-          node --test website/tests/*.test.mjs
+      - uses: jdx/mise-action@v3
+        with:
+          version: "2026.8.8"
+      - name: Check Xcode and resolve dependencies
+        run: mise run setup
+      - name: Test app, release tooling, and website
+        run: mise run test
       - name: Build native application
         run: swift Scripts/build-app.swift
       - name: Verify separate debug app packaging

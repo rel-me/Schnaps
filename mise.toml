@@ -1,0 +1,43 @@
+# Install mise itself before running `mise trust && mise install`.
+[tools]
+node = "24.22.2" # Includes npm; Wrangler uses this runtime.
+python = "3.12.14"
+gh = "2.103.3"
+"npm:wrangler" = "4.162.0"
+
+# Official WebP binaries provide both cwebp and img2webp on Intel and Apple Silicon.
+[tools."http:webp"]
+version = "1.6.0"
+url = 'https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-{{ version }}-mac-{{ arch(x64="x86-64") }}.tar.gz'
+strip_components = 1
+bin_path = "bin"
+
+# Swift, swiftc, SDKs, actool, assetutil, notarytool, and stapler come from Xcode.
+# macOS supplies git, make, sh, codesign, security, ditto, hdiutil, iconutil,
+# plutil, shasum, spctl, and open. Do not replace those with standalone packages.
+[vars]
+xcode = "26.3"
+
+[env]
+SCHNAPS_XCODE_VERSION = "{{ env.SCHNAPS_XCODE_VERSION | default(value=vars.xcode) }}"
+DEVELOPER_DIR = "{{ env.DEVELOPER_DIR | default(value='/Applications/Xcode_' ~ vars.xcode ~ '.app/Contents/Developer') }}"
+
+[tasks.setup]
+description = "Check the Apple toolchain and resolve pinned Swift packages"
+run = [
+  'test "$(xcodebuild -version | head -n 1)" = "Xcode $SCHNAPS_XCODE_VERSION" || { echo "Install/select Xcode $SCHNAPS_XCODE_VERSION (see README.md)" >&2; exit 1; }',
+  "swift package resolve",
+]
+
+[tasks.test]
+description = "Run Swift, release tooling, and website checks"
+run = [
+  "swift test",
+  "swiftc -typecheck Scripts/release.swift",
+  "make build/tools/schnaps-release",
+  "python3 Scripts/test-release-source.py",
+  "python3 Scripts/test-notarization-preflight.py",
+  "swiftc -swift-version 6 -typecheck Scripts/export-demo.swift",
+  "node --check website/dist/site.js",
+  "node --test website/tests/*.test.mjs",
+]
