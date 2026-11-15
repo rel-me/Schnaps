@@ -67,11 +67,25 @@ Screen images stay in memory on your Mac unless you explicitly copy or save a sc
 
 ## Build from source
 
+Install [mise](https://mise.jdx.dev/getting-started.html) **2026.8.8** and Xcode **26.3** (including its additional components and accepted license). Place Xcode at `/Applications/Xcode_26.3.app`, then run from the repository root:
+
+```sh
+mise trust
+mise install
+mise run setup
+mise run test
+mise exec -- make dev
+```
+
+`mise.toml` and `mise.lock` pin Node/npm, Python, GitHub CLI, Wrangler, and the WebP encoders for both Apple Silicon and Intel. It also selects Xcode through `DEVELOPER_DIR`, keeping Swift, the macOS SDK, asset compilers, and signing/notarization tools together. Git, Make, shell commands, and macOS utilities come with macOS/Xcode. Sparkle and its release tools are pinned by SwiftPM. Signing identities, notarization credentials, and GitHub/Cloudflare authentication must be configured per developer.
+
+Activate mise in your shell to use the commands below directly, or prefix them with `mise exec --`. For Xcode installed elsewhere, export `DEVELOPER_DIR=/path/to/Xcode.app/Contents/Developer` before running mise. To intentionally test another Xcode version, also export `SCHNAPS_XCODE_VERSION` to its version; CI uses this override for its Xcode 16.4 compatibility job. `mise run setup` checks the selected version before resolving packages. CI installs the same pinned tools through `jdx/mise-action`.
+
 Run `make dev` to build, install, and launch `/Applications/SchnapsDebug.app`. Repeating the command quits the previous debug instance and replaces it at the same path. Debug uses its own bundle identifier (`com.gabrielhandford.Schnap.debug`), settings, and privacy permissions, separate from the release app.
 
 The installer automatically signs with your Apple Development certificate when exactly one is available. Otherwise, set `SCHNAPS_SIGN_IDENTITY` to the development identity you want to keep using. Enable Screen Recording and any needed Accessibility access for **SchnapsDebug** once in System Settings → Privacy & Security. Keeping the same signing identity and bundle identifier lets macOS retain those grants across rebuilds. A signing identity change may require granting access again; ad hoc signing cannot preserve permissions reliably, so the installer requires certificate signing.
 
-Codex local environment actions in `.codex/environments/environment.toml` run the Makefile tasks: Debug launch, tests, beta planning, release-tool build, and beta/stable publishing.
+Codex local environment actions in `.codex/environments/environment.toml` install the mise environment and run tasks through mise: Debug launch, tests, beta planning, release-tool build, and beta/stable publishing.
 
 ```sh
 swift test
