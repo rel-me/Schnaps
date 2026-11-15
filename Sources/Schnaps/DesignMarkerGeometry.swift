@@ -13,7 +13,22 @@ extension DesignMarker {
   func containsEditingPoint(_ point: CGPoint) -> Bool {
     switch tool {
     case .ruler:
-      return DesignGeometry.distance(point, toSegmentFrom: CGPoint(x: x, y: y), to: end) < 24
+      let start = CGPoint(x: x, y: y)
+      if DesignGeometry.distance(point, toSegmentFrom: start, to: end) < 24 { return true }
+      if calipers {
+        for endpoint in [start, end] {
+          let a = DesignGeometry.endpoint(origin: endpoint, length: 70, degrees: angle + 90)
+          let b = DesignGeometry.endpoint(origin: endpoint, length: 70, degrees: angle - 90)
+          if DesignGeometry.distance(point, toSegmentFrom: a, to: b) < 10 { return true }
+        }
+      }
+      if square {
+        let corner = DesignGeometry.endpoint(origin: start, length: height, degrees: angle + 90)
+        let far = DesignGeometry.endpoint(origin: corner, length: width, degrees: angle)
+        return DesignGeometry.distance(point, toSegmentFrom: start, to: corner) < 10
+          || DesignGeometry.distance(point, toSegmentFrom: corner, to: far) < 10
+      }
+      return false
     case .guides:
       return abs(vertical ? point.x - x : point.y - y) < 14
     default:

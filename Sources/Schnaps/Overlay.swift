@@ -235,17 +235,29 @@ final class MeasurementView: NSView {
         pointerIsInside && mode == .findDimensions && !dragging && selection == nil && heldDimensions == nil
     }
     var captureSnapshot: ScreenSnapshot? { snapshot }
-    private var selection: CGRect?
+    private(set) var selection: CGRect?
     private var detectionRegion: CGRect?
     private var scrollRemainder: CGFloat = 0
     private var liveDimensions: Dimensions?
-    private var heldDimensions: Dimensions?
+    private(set) var heldDimensions: Dimensions?
     private var modifierFlags: NSEvent.ModifierFlags = []
     private var manualDrag = false
     private var cursor = CGPoint.zero
     private var anchor = CGPoint.zero
     private var original: CGRect?
     private var dragging = false
+    private var controlDrag: (target: ControlTarget, spans: [DimensionSpan], position: CGFloat)?
+    private var consumedClick = false
+    enum ControlTarget: Equatable {
+        case selection, area(Int), distances(Int, Int), held, live, guide(Int)
+    }
+    struct LabelControl {
+        let target: ControlTarget
+        let text: String
+        let label: CGRect
+        let close: CGRect
+        let group: CGRect
+    }
     private enum DragMode { case create, move, resize(CGPoint) }
     private var dragMode = DragMode.create
     private var unit: MeasurementUnit = .points
@@ -298,6 +310,10 @@ final class MeasurementView: NSView {
     override func resetCursorRects() {
         let hidden=NSCursor(image:NSImage(size:NSSize(width:16,height:16),flipped:false) { _ in true },hotSpot:.zero)
         addCursorRect(bounds,cursor:UserDefaults.standard.bool(forKey:PreferenceKey.showCursor) ? .crosshair : hidden)
+        for control in labelControls() {
+            addCursorRect(control.label, cursor: .openHand)
+            addCursorRect(control.close, cursor: .pointingHand)
+        }
     }
     func updateSnapshot(_ value: ScreenSnapshot?) {
         // Always accept the first frame, even if a drag began during capture.
@@ -338,6 +354,9 @@ final class MeasurementView: NSView {
     override func mouseMoved(with event: NSEvent) {
         pointerIsInside = true
         cursor = convert(event.locationInWindow, from: nil)
+        if let interaction = interactionCursor(at: cursor) { interaction.set() }
+        else if UserDefaults.standard.bool(forKey: PreferenceKey.showCursor) { NSCursor.crosshair.set() }
+        else { NSCursor(image: NSImage(size: NSSize(width: 16, height: 16), flipped: false) { _ in true }, hotSpot: .zero).set() }
         // A held measurement does not change when the pointer moves. Redraw only
         // if its alignment guides follow the pointer.
         if selection != nil || heldDimensions != nil {
@@ -378,6 +397,23 @@ final class MeasurementView: NSView {
         manualDrag = event.type == .rightMouseDown
         original = selection
         detectionRegion = nil
+        controlDrag = nil
+        consumedClick = false
+        let controls = labelControls()
+        if let control = controls.reversed().first(where: { $0.close.contains(anchor) }) {
+            removeControl(control.target)
+            consumedClick = true
+            needsDisplay = true
+            return
+        }
+        if let control = controls.reversed().first(where: { $0.label.contains(anchor) }) {
+            beginControlDrag(control.target)
+            return
+        }
+        if let target = lineTarget(at: anchor) {
+            beginControlDrag(target)
+            return
+        }
         if let selection {
             let corners = [CGPoint(x: selection.minX, y: selection.minY), CGPoint(x: selection.maxX, y: selection.minY),
                            CGPoint(x: selection.minX, y: selection.maxY), CGPoint(x: selection.maxX, y: selection.maxY)]
@@ -391,10 +427,7 @@ final class MeasurementView: NSView {
         }
         // Clicking a pin restores it for editing.
         if let index = pinned.lastIndex(where: { $0.contains(anchor) }) {
-            selection = pinned.remove(at: index)
-            original = selection
-            dragMode = .move
-            needsDisplay = true
+            beginControlDrag(.area(index))
             return
         }
         dragMode = .create
@@ -404,11 +437,37 @@ final class MeasurementView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        guard !consumedClick else { return }
         modifierFlags = event.modifierFlags
         let point = rounded(convert(event.locationInWindow, from: nil))
         guard dragging || hypot(point.x - anchor.x, point.y - anchor.y) >= 2 else { return }
         dragging = true
         cursor = point
+        NSCursor.closedHand.set()
+        if let drag = controlDrag {
+            let dx = point.x - anchor.x, dy = point.y - anchor.y
+            if case .guide(let index) = drag.target {
+                guides[index].position = drag.position + (guides[index].vertical ? dx : dy)
+            } else {
+                let minX = drag.spans.map { min($0.start.x, $0.end.x) }.min() ?? 0
+                let maxX = drag.spans.map { max($0.start.x, $0.end.x) }.max() ?? 0
+                let minY = drag.spans.map { min($0.start.y, $0.end.y) }.min() ?? 0
+                let maxY = drag.spans.map { max($0.start.y, $0.end.y) }.max() ?? 0
+                let x = max(-minX, min(bounds.maxX - maxX, dx))
+                let y = max(-minY, min(bounds.maxY - maxY, dy))
+                let spans = drag.spans.map { DimensionSpan(
+                    start: CGPoint(x: $0.start.x + x, y: $0.start.y + y),
+                    end: CGPoint(x: $0.end.x + x, y: $0.end.y + y)) }
+                switch drag.target {
+                case .distances(let index, let count): pinnedDistances.replaceSubrange(index..<index+count, with: spans)
+                case .held: heldDimensions = Dimensions(horizontal: spans[0], vertical: spans[1])
+                default: break
+                }
+            }
+            liveDimensions = nil
+            needsDisplay = true
+            return
+        }
         switch dragMode {
         case .create:
             selection = MeasurementGeometry.rectangle(from: anchor, to: point, within: bounds,
@@ -425,6 +484,14 @@ final class MeasurementView: NSView {
         needsDisplay = true
     }
     override func mouseUp(with event: NSEvent) {
+        if consumedClick || controlDrag != nil {
+            consumedClick = false
+            controlDrag = nil
+            dragging = false
+            window?.invalidateCursorRects(for: self)
+            needsDisplay = true
+            return
+        }
         modifierFlags = event.modifierFlags
         if case .create = dragMode {
             if !dragging {
@@ -437,9 +504,12 @@ final class MeasurementView: NSView {
         }
         if let rect = selection, rect.width < 1 / scale || rect.height < 1 / scale { selection = nil }
         dragging = false
+        window?.invalidateCursorRects(for: self)
         needsDisplay = true
     }
     override func rightMouseDown(with event: NSEvent) {
+        controlDrag = nil
+        consumedClick = false
         areaDetection.cancel()
         pointerIsInside = true
         window?.makeFirstResponder(self)
@@ -707,29 +777,24 @@ final class MeasurementView: NSView {
             line(from: CGPoint(x: cursor.x - 8, y: cursor.y), to: CGPoint(x: cursor.x + 8, y: cursor.y), color: color, dashed: false)
             line(from: CGPoint(x: cursor.x, y: cursor.y - 8), to: CGPoint(x: cursor.x, y: cursor.y + 8), color: color, dashed: false)
         }
-        var labels: [CGRect] = []
-        for (index, rect) in pinned.enumerated() { drawMeasurement(rect, index: index + 1, active: false, labels: &labels) }
-        if let rect = selection { drawMeasurement(rect, index: nil, active: true, labels: &labels) }
-        var distanceIndex = 0
-        while distanceIndex < pinnedDistances.count {
-            let horizontal = pinnedDistances[distanceIndex]
-            if distanceIndex + 1 < pinnedDistances.count,
-               let dimensions = FindDimensionsLabel.pair(horizontal, pinnedDistances[distanceIndex + 1]) {
-                drawDistance(dimensions.horizontal, held: true, labels: &labels, showLabel: false)
-                drawDistance(dimensions.vertical, held: true, labels: &labels, showLabel: false)
-                drawDimensionsLabel(dimensions.rect,
-                    at: CGPoint(x: dimensions.vertical.start.x, y: dimensions.horizontal.start.y), labels: &labels)
-                distanceIndex += 2
-            } else {
-                drawDistance(horizontal, held: true, labels: &labels)
-                distanceIndex += 1
-            }
-        }
+        for (index, rect) in pinned.enumerated() { drawMeasurement(rect, index: index + 1, active: false) }
+        if let rect = selection { drawMeasurement(rect, index: nil, active: true) }
+        for distance in pinnedDistances { drawDistance(distance, held: true) }
         if let dimensions = heldDimensions ?? liveDimensions {
-            drawDistance(dimensions.horizontal, held: heldDimensions != nil, labels: &labels, showLabel: false)
-            drawDistance(dimensions.vertical, held: heldDimensions != nil, labels: &labels, showLabel: false)
-            drawDimensionsLabel(dimensions.rect,
-                at: CGPoint(x: dimensions.vertical.start.x, y: dimensions.horizontal.start.y), labels: &labels)
+            drawDistance(dimensions.horizontal, held: heldDimensions != nil)
+            drawDistance(dimensions.vertical, held: heldDimensions != nil)
+        }
+        for control in labelControls() {
+            drawPill(control.text, in: control.label)
+            NSColor.windowBackgroundColor.setFill()
+            NSBezierPath(roundedRect: control.close, xRadius: 4, yRadius: 4).fill()
+            line(from: CGPoint(x: control.close.minX + 8, y: control.close.minY + 8),
+                 to: CGPoint(x: control.close.maxX - 8, y: control.close.maxY - 8), color: .labelColor, dashed: false)
+            line(from: CGPoint(x: control.close.maxX - 8, y: control.close.minY + 8),
+                 to: CGPoint(x: control.close.minX + 8, y: control.close.maxY - 8), color: .labelColor, dashed: false)
+            if control.target == .selection && showsSnapIndicator {
+                drawSnapIcon(in: CGRect(x: control.label.midX - 8, y: control.label.maxY + 4, width: 16, height: 16))
+            }
         }
         if let message {
             NSGraphicsContext.saveGraphicsState()
@@ -739,7 +804,129 @@ final class MeasurementView: NSView {
         }
     }
 
-    private func drawMeasurement(_ rect: CGRect, index: Int?, active: Bool, labels: inout [CGRect]) {
+    func labelControls() -> [LabelControl] {
+        var controls: [LabelControl] = []
+        func append(_ target: ControlTarget, text: String, group: CGRect) {
+            let label = CGRect(x: group.minX, y: group.minY, width: max(0, group.width - 27), height: 28)
+            controls.append(LabelControl(target: target, text: text, label: label,
+                close: CGRect(x: label.maxX + 3, y: label.minY + 2, width: 24, height: 24), group: group))
+        }
+        func size(_ text: String, height: CGFloat = 28) -> CGSize {
+            CGSize(width: (text as NSString).size(withAttributes: textAttributes).width + 49, height: height)
+        }
+        func area(_ rect: CGRect, target: ControlTarget, prefix: String = "") {
+            let text = prefix + areaLabelText(rect)
+            let group = AreaMeasurementLabel.frame(for: rect,
+                size: size(text, height: target == .selection && showsSnapIndicator ? 48 : 28),
+                in: bounds, avoiding: controls.map(\.group))
+            append(target, text: text, group: group)
+        }
+        for (index, rect) in pinned.enumerated() { area(rect, target: .area(index), prefix: "\(index + 1)  ·  ") }
+        if let selection { area(selection, target: .selection) }
+        func dimensions(_ value: Dimensions, target: ControlTarget) {
+            let text = FindDimensionsLabel.text(for: value.rect, presentation: presentation, scale: scale)
+            let center = CGPoint(x: value.vertical.start.x, y: value.horizontal.start.y)
+            let group = FindDimensionsLabel.frame(at: center, size: size(text), in: bounds,
+                avoiding: controls.map(\.group))
+            append(target, text: text, group: group)
+        }
+        var index = 0
+        while index < pinnedDistances.count {
+            let span = pinnedDistances[index]
+            if index + 1 < pinnedDistances.count, let pair = FindDimensionsLabel.pair(span, pinnedDistances[index + 1]) {
+                dimensions(pair, target: .distances(index, 2))
+                index += 2
+            } else {
+                let text = presentation.distance(span.length, scale: scale, horizontal: span.isHorizontal)
+                append(.distances(index, 1), text: text, group: DimensionLabelPlacement.frame(for: span,
+                    size: size(text), in: bounds, avoiding: controls.map(\.group)))
+                index += 1
+            }
+        }
+        if let value = heldDimensions ?? liveDimensions { dimensions(value, target: heldDimensions == nil ? .live : .held) }
+        for (index, guide) in guides.enumerated() {
+            let text = "\(guide.vertical ? "x" : "y") \(presentation.value(guide.position, scale: scale))"
+            let preferred = CGRect(x: guide.vertical ? guide.position + 10 : 8,
+                y: guide.vertical ? 8 : guide.position + 10, width: size(text).width, height: 28)
+            let group = RulerCaptionPlacement.rect(preferred: preferred,
+                origin: guide.vertical ? CGPoint(x: guide.position, y: 0) : CGPoint(x: 0, y: guide.position),
+                angle: guide.vertical ? 90 : 0, bounds: bounds.insetBy(dx: 8, dy: 8),
+                avoiding: controls.map(\.group), gap: 8)
+            append(.guide(index), text: text, group: group)
+        }
+        return controls
+    }
+
+    func interactionCursor(at point: CGPoint) -> NSCursor? {
+        if dragging { return .closedHand }
+        let controls = labelControls()
+        if controls.contains(where: { $0.close.contains(point) }) { return .pointingHand }
+        if controls.contains(where: { $0.label.contains(point) }) { return .openHand }
+        if let selection, selection.insetBy(dx: -8, dy: -8).contains(point) {
+            let corners = [selection.origin, CGPoint(x: selection.maxX, y: selection.minY),
+                CGPoint(x: selection.minX, y: selection.maxY), CGPoint(x: selection.maxX, y: selection.maxY)]
+            if corners.contains(where: { hypot($0.x - point.x, $0.y - point.y) < 9 }) { return .crosshair }
+            return .openHand
+        }
+        return pinned.contains(where: { $0.contains(point) }) || lineTarget(at: point) != nil ? .openHand : nil
+    }
+
+    private func lineTarget(at point: CGPoint) -> ControlTarget? {
+        for control in labelControls().reversed() {
+            switch control.target {
+            case .distances(let index, let count):
+                if pinnedDistances[index..<index+count].contains(where: {
+                    DesignGeometry.distance(point, toSegmentFrom: $0.start, to: $0.end) < 8
+                }) { return control.target }
+            case .held:
+                if let heldDimensions, [heldDimensions.horizontal, heldDimensions.vertical].contains(where: {
+                    DesignGeometry.distance(point, toSegmentFrom: $0.start, to: $0.end) < 8
+                }) { return .held }
+            case .guide(let index):
+                let guide = guides[index]
+                if abs(guide.position - (guide.vertical ? point.x : point.y)) < 8 { return control.target }
+            default: break
+            }
+        }
+        return nil
+    }
+
+    private func beginControlDrag(_ target: ControlTarget) {
+        dragMode = .move
+        switch target {
+        case .selection: original = selection
+        case .area(let index):
+            // Keep an existing active selection by pinning it before restoring another one.
+            let restored = pinned.remove(at: index)
+            if let selection { pinned.append(selection) }
+            selection = restored
+            original = restored
+        case .distances(let index, let count):
+            controlDrag = (target, Array(pinnedDistances[index..<index+count]), 0)
+        case .held, .live:
+            if let value = heldDimensions ?? liveDimensions {
+                heldDimensions = value
+                liveDimensions = nil
+                controlDrag = (.held, [value.horizontal, value.vertical], 0)
+            }
+        case .guide(let index): controlDrag = (target, [], guides[index].position)
+        }
+        NSCursor.closedHand.set()
+        needsDisplay = true
+    }
+
+    private func removeControl(_ target: ControlTarget) {
+        switch target {
+        case .selection: selection = nil; detectionRegion = nil
+        case .area(let index): pinned.remove(at: index)
+        case .distances(let index, let count): pinnedDistances.removeSubrange(index..<index+count)
+        case .held, .live: heldDimensions = nil; liveDimensions = nil
+        case .guide(let index): guides.remove(at: index)
+        }
+        window?.invalidateCursorRects(for: self)
+    }
+
+    private func drawMeasurement(_ rect: CGRect, index: Int?, active: Bool) {
         let color = index == nil ? areaMeasurementColor : MeasurementPreferences.color(PreferenceKey.guideColor)
         color.withAlphaComponent(active ? 0.09 : 0.045).setFill()
         rect.fill()
@@ -763,18 +950,6 @@ final class MeasurementView: NSView {
                 handle.fill(); color.setStroke(); handle.stroke()
             }
         }
-        let text = (index.map { "\($0)  ·  " } ?? "") + areaLabelText(rect)
-        let showSnap = active && showsSnapIndicator
-        let textSize = (text as NSString).size(withAttributes: textAttributes)
-        let group = AreaMeasurementLabel.frame(for: rect,
-            size: CGSize(width: textSize.width + 22, height: showSnap ? 48 : 28),
-            in: bounds, avoiding: labels)
-        let label = CGRect(x: group.minX, y: group.minY, width: group.width, height: 28)
-        line(from: CGPoint(x: rect.midX, y: rect.maxY), to: CGPoint(x: label.midX, y: label.minY),
-             color: color.withAlphaComponent(0.65), dashed: true)
-        drawPill(text, in: label)
-        if showSnap { drawSnapIcon(in: CGRect(x: label.midX - 8, y: label.maxY + 4, width: 16, height: 16)) }
-        labels.append(group)
     }
 
     private func areaLabelText(_ rect: CGRect) -> String {
@@ -802,16 +977,7 @@ final class MeasurementView: NSView {
         CGRect(x: rect.minX + 11, y: rect.minY + 5, width: 4, height: 1).fill()
     }
 
-    private func drawDimensionsLabel(_ measurement: CGRect, at center: CGPoint, labels: inout [CGRect]) {
-        let text = FindDimensionsLabel.text(for: measurement, presentation: presentation, scale: scale)
-        let textSize = (text as NSString).size(withAttributes: textAttributes)
-        let rect = FindDimensionsLabel.frame(at: center,
-            size: CGSize(width: textSize.width + 22, height: 28), in: bounds)
-        drawPill(text, in: rect)
-        labels.append(rect)
-    }
-
-    private func drawDistance(_ distance: DimensionSpan, held: Bool, labels: inout [CGRect], showLabel: Bool = true) {
+    private func drawDistance(_ distance: DimensionSpan, held: Bool) {
         let color = measurementColor(at: CGPoint(x:(distance.start.x+distance.end.x)/2,y:(distance.start.y+distance.end.y)/2))
         line(from: distance.start, to: distance.end, color: color, dashed: held)
         let horizontal = distance.isHorizontal
@@ -821,13 +987,6 @@ final class MeasurementView: NSView {
             line(from: CGPoint(x: point.x - dx, y: point.y - dy),
                  to: CGPoint(x: point.x + dx, y: point.y + dy), color: color, dashed: false)
         }
-        guard showLabel else { return }
-        let text = presentation.distance(distance.length,scale:scale,horizontal:horizontal)
-        let textSize = (text as NSString).size(withAttributes: textAttributes)
-        let rect = DimensionLabelPlacement.frame(for: distance,
-            size: CGSize(width: textSize.width + 22, height: 28), in: bounds, avoiding: labels)
-        drawPill(text, in: rect)
-        labels.append(rect)
     }
 
     private func line(from start: CGPoint, to end: CGPoint, color: NSColor, dashed: Bool) {

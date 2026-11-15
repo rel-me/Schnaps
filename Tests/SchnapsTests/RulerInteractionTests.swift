@@ -130,7 +130,7 @@ import Testing
   #expect(persisted == tools.markers)
 }
 
-@Test(arguments: [DesignTool.ruler, .guides]) @MainActor
+@Test(arguments: [DesignTool.ruler, .guides, .frames, .overlay, .screens]) @MainActor
 func markerLabelsDragAndCloseWithoutAffectingOtherMarkers(tool: DesignTool) throws {
   let screen = try #require(NSScreen.main)
   let name = "Schnaps.MarkerControls.Tests." + UUID().uuidString

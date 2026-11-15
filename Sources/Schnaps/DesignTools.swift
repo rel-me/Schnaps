@@ -110,8 +110,13 @@ final class DesignTools: ObservableObject {
   @Published var synchronizeLength = false
   @Published var synchronizeAngle = false
   @Published var crosshair = false {
-    didSet { if crosshair && !oldValue { recordPresentation(.crosshair) }; redraw?() }
+    didSet {
+      if crosshair && !oldValue { recordPresentation(.crosshair) }
+      if !crosshair { frozenCrosshair = nil }
+      redraw?()
+    }
   }
+  @Published var frozenCrosshair: CGPoint? { didSet { redraw?() } }
   @Published var relativeOrigin: CGPoint? { didSet { redraw?() } }
   @Published var lineWidth = 1.0 { didSet { redraw?() } }
   @Published var loupe = false {

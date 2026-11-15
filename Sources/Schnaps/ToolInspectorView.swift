@@ -44,7 +44,7 @@ struct ToolInspectorView: View {
       Text("Design tools")
     } footer: {
       Text(
-        "Drag a line or its label to move. Click × to remove a ruler or guide, or select a marker and press Delete. Drag a ruler’s round end handle to rotate; hold Shift for 45°. Control snaps to detected edges. Escape dismisses the last shown tool. Clicks away from editable marks pass through. Turn off editing to let all clicks pass through."
+        "Drag a tool or any of its labels to move. Click × to close a tool, or select a marker and press Delete. Drag a ruler’s round end handle to rotate; hold Shift for 45°. Control snaps to detected edges. Escape dismisses the last shown tool. Clicks away from editable marks pass through. Turn off editing to let all clicks pass through."
       ).font(.footnote).padding(.top, -7)
     }
     if tools.tool == .loupe {
@@ -260,11 +260,13 @@ struct ToolInspectorView: View {
         "Crosshair", isOn: Binding(get: { tools.crosshair }, set: { _ in tools.show?(.crosshair) }))
       LabeledContent("Line width") { Slider(value: $tools.lineWidth, in: 1...8) }
       Button("Reset Origin") { tools.relativeOrigin = nil }
+      Button("Follow Pointer") { tools.frozenCrosshair = nil }
+        .disabled(tools.frozenCrosshair == nil)
     } header: {
       Text("Coordinates")
     } footer: {
       Text(
-        "While editing, click to set a relative origin. O sets the origin at the pointer; R resets it. Coordinates use the top-left of each display."
+        "Drag the label to pin and move the crosshair. While editing, click to set a relative origin. O sets the origin at the pointer; R resets it. Coordinates use the top-left of each display."
       ).font(.footnote).padding(.top, -7)
     }
   }
@@ -272,7 +274,7 @@ struct ToolInspectorView: View {
     Group {
       Section("Loupe") {
         Toggle("Loupe", isOn: Binding(get: { tools.loupe }, set: { _ in tools.show?(.loupe) }))
-        Text("Arrows pin and move one pixel; Shift-Arrows move ten. Space pins or resumes following the pointer. C copies; Shift-C saves a swatch.")
+        Text("Drag the label to pin and move the loupe. Arrows pin and move one pixel; Shift-Arrows move ten. Space pins or resumes following the pointer. C copies; Shift-C saves a swatch.")
           .font(.footnote).foregroundStyle(.secondary)
         LabeledContent("Magnification") { Slider(value: $tools.zoom, in: 2...32) }
         Toggle("Pixel grid", isOn: $tools.pixelGrid)
