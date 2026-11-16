@@ -169,24 +169,18 @@ struct SettingsView: View {
                 Picker(L("Default tool"), selection: $defaultTool) {
                     ForEach(MeasurementMode.allCases, id: \.rawValue) { Text(L($0.rawValue)).tag($0.rawValue) }
                 }
-            } header: { Text(L("Tools")) } footer: {
-                Text(L("Move the pointer to measure distances between edges. Drag around an object to find its bounds."))
-                    .font(.footnote).padding(.top, -7)
-            }
-            Section(L("Language")) {
+                .help(L("Move the pointer to measure distances between edges. Drag around an object to find its bounds."))
                 Picker(L("Language"), selection: $language) {
                     Text(L("System Default")).tag("system")
                     Text(L("English")).tag("en"); Text(L("简体中文")).tag("zh-Hans")
                     Text(L("Español")).tag("es"); Text(L("Français")).tag("fr")
                     Text(L("Italiano")).tag("it"); Text(L("日本語")).tag("ja"); Text(L("Русский")).tag("ru")
                 }
-            }
-            Section {
                 Toggle(L("Start at login"), isOn: Binding(get: { loginItem.enabled || loginItem.needsApproval }, set: { loginItem.setEnabled($0) }))
                 Toggle(L("Show in menu bar"), isOn: $showMenuBar)
                 Toggle(L("Show all tools in menu bar menu"), isOn: $showAllMenuBarTools)
                 Toggle(L("Always show in dock"), isOn: $showInDock)
-            } header: { Text(L("Activation")) } footer: {
+            } header: { Text(L("General")) } footer: {
                 if loginItem.needsApproval {
                     Text(L("Approve Schnaps in System Settings → Login Items."))
                         .font(.footnote).padding(.top, -7)
@@ -204,6 +198,8 @@ struct SettingsView: View {
                 Toggle(L("Display units"), isOn: $showUnits)
                 Toggle(L("Display width/height indicators"), isOn: $showIndicators)
                 Toggle(L("Show cursor"), isOn: $showCursor)
+                Toggle(L("Freeze screen"), isOn: $freezeScreen)
+                    .help(L("Keep a still screen while measuring."))
             }
             Section(L("Aspect ratio")) {
                 Picker(L("Aspect ratio"), selection: $aspectStyle) {
@@ -216,15 +212,12 @@ struct SettingsView: View {
                 Toggle(L("Snap to guides"), isOn: $snapGuides)
                 Toggle(L("Snap to selected objects"), isOn: $snapObjects)
             }
-            Section { Toggle(L("Freeze screen"), isOn: $freezeScreen) } footer: {
-                Text(L("Keep a still screen while measuring.")).font(.footnote).padding(.top, -7)
-            }
         }
     }
 
     private var screenshots: some View {
         Group {
-            Section(L("Export")) {
+            Section {
                 LabeledContent(L("Export folder")) {
                     Button { chooseScreenshotFolder() } label: {
                         Label(URL(fileURLWithPath: screenshotFolder).lastPathComponent, systemImage: "folder")
@@ -265,8 +258,6 @@ struct SettingsView: View {
                     .help(L("Preview save sound"))
                 }
                 .disabled(!screenshotSound)
-            }
-            Section {
                 LabeledContent(L("Padding")) {
                     HStack {
                         Slider(value: Binding(get: { Double(screenshotPadding) }, set: { screenshotPadding=Int($0) }), in: 0...101, step: 1)
@@ -274,7 +265,7 @@ struct SettingsView: View {
                         Text(screenshotPadding > 100 ? L("Auto") : "\(screenshotPadding) pt").monospacedDigit().frame(minWidth: 46, alignment: .trailing)
                     }.frame(maxWidth: 250)
                 }
-            } footer: {
+            } header: { Text(L("Export")) } footer: {
                 Text(L("Hold Option to toggle padding when capturing.")).font(.footnote).padding(.top,-7)
             }
         }
