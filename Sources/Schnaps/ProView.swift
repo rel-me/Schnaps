@@ -3,8 +3,6 @@ import MeasurementCore
 
 struct ProSection: View {
     @ObservedObject var membership: ProMembership
-    @State private var showingKey = false
-    @State private var key = ""
 
     var body: some View {
         Section {
@@ -24,9 +22,8 @@ struct ProSection: View {
                     if let owned = membership.tier, owned.rank >= tier.rank {
                         Label("On your shelf", systemImage: "checkmark").foregroundStyle(.secondary)
                     } else {
-                        Button("$\(tier.price)") { membership.buy(tier) }
-                            .disabled(membership.catalog?.isConfigured != true)
-                            .accessibilityLabel("Buy Pro \(tier.name) for \(tier.price) US dollars")
+                        Text("Coming soon")
+                            .foregroundStyle(.secondary)
                     }
                 } label: {
                     HStack(spacing: 10) {
@@ -40,40 +37,11 @@ struct ProSection: View {
         } footer: {
             VStack(alignment: .leading, spacing: 8) {
                 Text("All the tools, always free. A little something for your shelf.")
-                Text(membership.catalog?.isConfigured == true ? "One-time · USD · Tax calculated at checkout" : "The shelf is being stocked. Coming soon.")
-                Button("Have a Pro key?") { showingKey = true }
-                    .buttonStyle(.link)
-                    .disabled(membership.catalog?.isConfigured != true)
-                if let message = membership.message { Text(message).accessibilityAddTraits(.updatesFrequently) }
+                Text("Pro purchases are temporarily unavailable while we set up a new payment provider.")
             }
             .font(.footnote)
             .padding(.top, -7)
         }
-        .sheet(isPresented: $showingKey, onDismiss: { key = "" }) {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Make yourself at home.").font(.headline)
-                SecureField("Pro key from your receipt", text: $key)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit { restore() }
-                if let message = membership.message { Text(message).font(.footnote).foregroundStyle(.secondary) }
-                HStack {
-                    Button("Cancel") { showingKey = false }.keyboardShortcut(.cancelAction)
-                        .disabled(membership.isRestoring)
-                    Spacer()
-                    if membership.isRestoring { ProgressView().controlSize(.small) }
-                    Button("Claim my keepsake", action: restore)
-                        .keyboardShortcut(.defaultAction)
-                        .disabled(key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || membership.isRestoring)
-                }
-            }
-            .padding(24)
-            .frame(width: 380)
-            .interactiveDismissDisabled(membership.isRestoring)
-        }
-    }
-
-    private func restore() {
-        Task { if await membership.restore(key: key) { showingKey = false } }
     }
 }
 
