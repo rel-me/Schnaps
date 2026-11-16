@@ -23,7 +23,7 @@ private enum SchnapsTranslations {
         General|通用|General|Général|Generali|一般|Основные
         Screenshots|截图|Capturas|Captures d’écran|Screenshot|スクリーンショット|Снимки экрана
         Tolerance|容差|Tolerancia|Tolérance|Tolleranza|許容値|Допуск
-        Scroll up / down|向上/向下滚动|Desplazar arriba / abajo|Défiler vers le haut / bas|Scorri su / giù|上 / 下にスクロール|Прокрутка вверх / вниз
+        Med|中|Med|Moy|Med|中|Сред
         Appearance|外观|Apariencia|Apparence|Aspetto|外観|Оформление
         Shortcuts|快捷键|Atajos|Raccourcis|Scorciatoie|ショートカット|Сочетания клавиш
         Permissions|权限|Permisos|Autorisations|Permessi|アクセス権|Разрешения

@@ -11,3 +11,11 @@ Log each change's user requests and delegated prompts in a separate file under `
 # Delegated PR monitoring prompt
 
 Monitor the PR for branch `codex/gabriel/find-dimensions-tolerance-label` in `rel-me/Schnaps` until all checks finish. Inspect failures and fix any caused by this change in shared checkout. Run relevant checks, commit and push fixes, and monitor every updated head until all checks pass. Do not merge. Preserve unrelated work. Append fix context and further delegated prompts to this file. Report final head, check results, external blockers. Use bounded waits and meaningful progress updates.
+
+# Follow-up user request
+
+too verbose.. just show Tolerance value abberviated... like Med, Low, High with a tolerance icon
+
+# Delegated monitoring prompt after compact badge update
+
+Monitor PR https://github.com/rel-me/Schnaps/pull/98 after the compact tolerance badge update on branch `codex/gabriel/find-dimensions-tolerance-label`. Wait for all checks on the latest head. Inspect failures and fix any caused by this change, run relevant checks, commit and push fixes, and monitor every updated head until all checks pass. Do not merge. Preserve unrelated work. Append fix context and additional delegated prompts to this file. Report final head, check results, and blockers. Use bounded waits and meaningful progress updates.

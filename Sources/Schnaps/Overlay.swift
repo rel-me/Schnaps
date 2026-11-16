@@ -628,7 +628,7 @@ final class MeasurementView: NSView {
         let preset=MeasurementPreferences.selectedTolerance.cycled(backward:backward)
         MeasurementPreferences.selectTolerance(preset)
         synchronizePreferences()
-        flash(toleranceTitle)
+        if mode != .findDimensions { flash(toleranceTitle) }
     }
 
     func synchronizeTolerance() { synchronizePreferences() }
@@ -663,7 +663,6 @@ final class MeasurementView: NSView {
         let preset = MeasurementPreferences.selectedTolerance.stepped(by: steps)
         MeasurementPreferences.selectTolerance(preset)
         synchronizePreferences()
-        flash(toleranceTitle)
     }
 
     private func pin() {
@@ -817,8 +816,8 @@ final class MeasurementView: NSView {
         guard mode == .findDimensions else { return nil }
         switch target {
         case .selection, .held, .live:
-            let scroll = UserDefaults.standard.bool(forKey: PreferenceKey.scrollTolerance) ? " · " + L("Scroll up / down") : ""
-            return toleranceTitle + scroll + " · T / ⇧T"
+            let preset = MeasurementPreferences.selectedTolerance
+            return L(preset == .medium ? "Med" : preset.title)
         default: return nil
         }
     }
@@ -826,19 +825,23 @@ final class MeasurementView: NSView {
         [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor]
     }
 
+    private func toleranceBadgeWidth(_ text: String) -> CGFloat {
+        (text as NSString).size(withAttributes: detailAttributes).width + 16
+    }
+
     func labelControls() -> [LabelControl] {
         var controls: [LabelControl] = []
         func append(_ target: ControlTarget, text: String, group: CGRect) {
             let detail = toleranceDetail(for: target)
-            let label = CGRect(x: group.minX, y: group.minY, width: max(0, group.width - 27), height: detail == nil ? 28 : 48)
+            let label = CGRect(x: group.minX, y: group.minY, width: max(0, group.width - 27), height: 28)
             controls.append(LabelControl(target: target, text: text, detail: detail, label: label,
                 close: CGRect(x: label.maxX + 3, y: label.minY + 2, width: 24, height: 24), group: group))
         }
         func size(_ text: String, height: CGFloat = 28, target: ControlTarget? = nil) -> CGSize {
             let detail = target.flatMap { toleranceDetail(for: $0) }
             let textWidth = (text as NSString).size(withAttributes: textAttributes).width
-            let detailWidth = detail.map { ($0 as NSString).size(withAttributes: detailAttributes).width } ?? 0
-            return CGSize(width: max(textWidth, detailWidth) + 49, height: height + (detail == nil ? 0 : 20))
+            let badgeWidth = detail.map { toleranceBadgeWidth($0) + 12 } ?? 0
+            return CGSize(width: textWidth + badgeWidth + 49, height: height)
         }
         func area(_ rect: CGRect, target: ControlTarget, prefix: String = "") {
             let text = prefix + areaLabelText(rect)
@@ -1046,12 +1049,18 @@ final class MeasurementView: NSView {
         rect.fill()
         var attributes = textAttributes
         attributes[.foregroundColor] = NSColor.labelColor
+        let badgeWidth = detail.map { toleranceBadgeWidth($0) } ?? 0
         let primary = CGRect(x: rect.minX + 11, y: rect.minY + 6,
-            width: max(0, rect.width - 22), height: detail == nil ? rect.height - 12 : 16)
+            width: max(0, rect.width - 22 - (detail == nil ? 0 : badgeWidth + 12)), height: rect.height - 12)
         (text as NSString).draw(in: primary, withAttributes: attributes)
         if let detail {
-            (detail as NSString).draw(in: CGRect(x: rect.minX + 11, y: rect.minY + 28,
-                width: max(0, rect.width - 22), height: 14), withAttributes: detailAttributes)
+            let x = rect.maxX - 11 - badgeWidth
+            let icon = NSImage(systemSymbolName: "dial.low", accessibilityDescription: L("Tolerance"))?
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [.secondaryLabelColor]))
+            icon?.draw(in: CGRect(x: x, y: rect.midY - 6, width: 12, height: 12),
+                from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+            (detail as NSString).draw(in: CGRect(x: x + 16, y: rect.midY - 7,
+                width: max(0, badgeWidth - 16), height: 14), withAttributes: detailAttributes)
         }
     }
 }
