@@ -87,14 +87,14 @@ func everyMarkerHasVisibleGrabbableControlsAtDisplayEdges(tool: DesignTool) thro
   #expect(state.markers[1] == covering)
 }
 
-@Test(arguments: [DesignTool.loupe, .crosshair]) @MainActor
-func floatingToolLabelsDragAndClose(tool: DesignTool) throws {
+@Test(arguments: [DesignTool.loupe, .crosshair], [false, true]) @MainActor
+func floatingToolLabelsDragAndClose(tool: DesignTool, editing: Bool) throws {
   let screen = try #require(NSScreen.main)
   let name = "Schnaps.FloatingControls.Tests." + UUID().uuidString
   let defaults = try #require(UserDefaults(suiteName: name))
   defer { defaults.removePersistentDomain(forName: name) }
   let state = DesignTools(defaults: defaults)
-  state.editing = true
+  state.editing = editing
   state.loupe = tool == .loupe
   state.crosshair = tool == .crosshair
   let global = CGPoint(x: screen.frame.minX + 200, y: screen.frame.maxY - 200)
@@ -104,6 +104,14 @@ func floatingToolLabelsDragAndClose(tool: DesignTool) throws {
   panel.isReleasedWhenClosed = false
   panel.contentView = canvas
   defer { panel.close() }
+  let stats = canvas.floatingText(tool)
+  if tool == .loupe {
+    #expect(stats.contains("8.0×"))
+    #expect(stats.contains("Waiting for screen pixels"))
+  } else {
+    #expect(stats.contains("Crosshair"))
+    #expect(stats.contains("x 200.0  y 200.0 pt"))
+  }
   let label = canvas.floatingLabelRect(tool)
   #expect(canvas.bounds.contains(label.union(canvas.floatingCloseRect(tool))))
   let start = CGPoint(x: label.midX, y: label.midY)
@@ -118,8 +126,8 @@ func floatingToolLabelsDragAndClose(tool: DesignTool) throws {
   #expect(abs(movedLabel.minX - label.minX + 60) < 0.001)
   #expect(abs(movedLabel.minY - label.minY - 40) < 0.001)
   state.editing = false
-  #expect(canvas.cursor(at: CGPoint(x: movedLabel.midX, y: movedLabel.midY)) == nil)
-  state.editing = true
+  #expect(canvas.cursor(at: CGPoint(x: movedLabel.midX, y: movedLabel.midY)) === NSCursor.openHand)
+  state.editing = editing
   let close = canvas.floatingCloseRect(tool)
   let point = CGPoint(x: close.midX, y: close.midY)
   #expect(canvas.cursor(at: point) === NSCursor.pointingHand)
@@ -334,4 +342,30 @@ func frozenFloatingToolsOnlyInterceptTheirOwningDisplay(tool: DesignTool) throws
   // An offscreen loupe would be clamped to the right edge; a crosshair would pass y=200.
   let point = tool == .loupe ? CGPoint(x: 740, y: 250) : CGPoint(x: 100, y: 200)
   #expect(canvas.cursor(at: point) == nil)
+}
+
+@Test @MainActor func loupeStatsShowLiveColorAndMagnificationWithoutEditing() throws {
+  let screen = try #require(NSScreen.main)
+  let name = "Schnaps.LoupeStats.Tests." + UUID().uuidString
+  let defaults = try #require(UserDefaults(suiteName: name))
+  defer { defaults.removePersistentDomain(forName: name) }
+  let state = DesignTools(defaults: defaults)
+  state.loupe = true
+  state.zoom = 12
+  state.frozenLoupe = CGPoint(x: screen.frame.minX + 1, y: screen.frame.maxY - 1)
+  let canvas = DesignCanvas(frame: CGRect(origin: .zero, size: screen.frame.size), screen: screen, state: state)
+  let context = try #require(CGContext(data: nil, width: 4, height: 4, bitsPerComponent: 8,
+    bytesPerRow: 16, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+  context.setFillColor(NSColor.red.cgColor)
+  context.fill(CGRect(x: 0, y: 0, width: 4, height: 4))
+  let image = try #require(context.makeImage())
+  let snapshot = ScreenSnapshot(image: image, pixels: try #require(PixelBuffer(image: image)), scaleX: 1, scaleY: 1)
+  canvas.snapshot = { snapshot }
+  #expect(!state.editing)
+  #expect(canvas.floatingText(.loupe).contains("12.0×"))
+  #expect(canvas.floatingText(.loupe).contains("#FF0000"))
+  let close = canvas.floatingCloseRect(.loupe)
+  #expect(canvas.cursor(at: CGPoint(x: close.midX, y: close.midY)) === NSCursor.pointingHand)
+  state.zoom = 16
+  #expect(canvas.floatingText(.loupe).contains("16.0×"))
 }

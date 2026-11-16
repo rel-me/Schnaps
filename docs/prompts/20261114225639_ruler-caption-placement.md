@@ -27,3 +27,11 @@ Please also review the new interaction paths for obvious regressions while waiti
 # PR monitoring fix
 
 The new frozen loupe and crosshair body hit tests could intercept clicks on another display where those tools were not drawn. Gate body hit testing with the same visible-anchor check as drawing and label hit testing. Add a regression test for both floating tools with their anchor outside the current canvas.
+
+# Follow-up user request
+
+Crosshair and Loupe dont have any overlay label showing stats (or close (X) button).. should they? if so add it
+
+# Delegated PR monitoring prompt for floating-tool controls
+
+Monitor PR https://github.com/rel-me/Schnaps/pull/93 on branch `codex/gabriel/ruler-caption-placement` after the change enabling Crosshair and Loupe stats labels and close buttons during normal tool use. Inspect failures and fix any caused by this change, run relevant checks, commit and push fixes, and monitor every updated head until all checks pass. Do not merge. Preserve unrelated work. Append fix context and further delegated prompts to this file. Report final head, check results, and external blockers. Use bounded waits and meaningful progress updates.

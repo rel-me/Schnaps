@@ -8,6 +8,7 @@ final class DesignCanvas: NSView {
   var snapshot: (() -> ScreenSnapshot?)?
   var inputChanged: (() -> Void)?
   var isDragging: Bool { dragStart != nil }
+  var isDraggingMarker: Bool { isDragging && floatingDrag == nil }
   private var floatingDrag: (tool: DesignTool, sample: CGPoint, label: CGRect)?
   private var floatingLabels: [DesignTool: CGRect] = [:]
   private var dragStart: CGPoint?
@@ -57,9 +58,9 @@ final class DesignCanvas: NSView {
     if id != hoveredID { hoveredID = id; needsDisplay = true }
   }
   func cursor(at point: CGPoint) -> NSCursor? {
-    guard state.editing else { return nil }
     if isDragging { return .closedHand }
     if let hit = floatingHit(at: point) { return hit.close ? .pointingHand : .openHand }
+    guard state.editing else { return nil }
     guard let marker = editableMarker(at: point) else { return nil }
     if removeButtonRect(for: marker)?.contains(point) == true { return .pointingHand }
     if markerLabelRects(for: marker).contains(where: { $0.contains(point) }) { return .openHand }
@@ -91,8 +92,9 @@ final class DesignCanvas: NSView {
     cursorUpdate(with: event)
   }
   var wantsMouseInput: Bool {
-    state.editing && (isDragging || (bounds.contains(pointer)
-      && (state.crosshair || floatingHit(at: pointer) != nil || editableMarker(at: pointer) != nil)))
+    isDragging || (bounds.contains(pointer)
+      && (floatingHit(at: pointer) != nil
+        || (state.editing && (state.crosshair || editableMarker(at: pointer) != nil))))
   }
   private var pointer: CGPoint {
     let p = NSEvent.mouseLocation
@@ -265,7 +267,7 @@ final class DesignCanvas: NSView {
     }
     for tool in [DesignTool.crosshair, .loupe] where floatingEnabled(tool) {
       drawCaption(floatingText(tool), in: floatingLabelRect(tool))
-      if state.editing { drawCloseButton(in: floatingCloseRect(tool)) }
+      drawCloseButton(in: floatingCloseRect(tool))
     }
   }
   private func draw(_ marker: DesignMarker, frame: ScreenSnapshot?) {
@@ -524,13 +526,17 @@ final class DesignCanvas: NSView {
     OverlayControlPlacement.clamped(CGRect(x: point.x + 24, y: point.y + 24, width: 180, height: 180),
       in: bounds.insetBy(dx: 8, dy: 8))
   }
-  private func floatingText(_ tool: DesignTool) -> String {
-    if tool == .loupe { return "Loupe · " + (sample(floatingPoint(tool))?.formatted(state.colorFormat) ?? "Waiting for screen pixels…") }
+  func floatingText(_ tool: DesignTool) -> String {
+    if tool == .loupe {
+      let zoom = number(max(2, min(32, state.zoom)))
+      let color = sample(floatingPoint(tool))?.formatted(state.colorFormat) ?? "Waiting for screen pixels…"
+      return "Loupe · \(zoom)× · \(color)"
+    }
     let point = floatingPoint(tool)
     let relative = state.relativeOrigin.map {
       CGPoint(x: display.frame.minX + point.x - $0.x, y: $0.y - display.frame.maxY + point.y)
     } ?? point
-    return "x \(number(relative.x))  y \(number(relative.y)) pt"
+    return "Crosshair · x \(number(relative.x))  y \(number(relative.y)) pt"
   }
   func floatingLabelRect(_ tool: DesignTool) -> CGRect {
     let text = floatingText(tool)
@@ -547,11 +553,12 @@ final class DesignCanvas: NSView {
     return CGRect(x: label.maxX + 3, y: label.midY - 12, width: 24, height: 24)
   }
   private func floatingHit(at point: CGPoint) -> (tool: DesignTool, close: Bool)? {
-    guard state.editing else { return nil }
     for tool in [DesignTool.loupe, .crosshair] where floatingEnabled(tool) {
       if floatingCloseRect(tool).contains(point) { return (tool, true) }
       if floatingLabelRect(tool).contains(point) { return (tool, false) }
     }
+    // Keep normal tool use click-through except for the explicit label controls.
+    guard state.editing else { return nil }
     // Pointer-following visuals cannot be chased; their stable labels are always grabbable.
     if floatingEnabled(.loupe), state.frozenLoupe != nil, loupeRect(at: floatingPoint(.loupe)).contains(point) {
       return (.loupe, false)

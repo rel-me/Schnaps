@@ -635,7 +635,9 @@ final class DesignToolsController {
       }
     }
     for window in windows {
-      if !state.editing { (window.contentView as? DesignCanvas)?.cancelDragging() }
+      if !state.editing, let canvas = window.contentView as? DesignCanvas, canvas.isDraggingMarker {
+        canvas.cancelDragging()
+      }
       if !window.isVisible { window.orderFrontRegardless() }
       window.contentView?.needsDisplay = true
     }
