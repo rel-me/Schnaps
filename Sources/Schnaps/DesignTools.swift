@@ -110,8 +110,13 @@ final class DesignTools: ObservableObject {
   @Published var synchronizeLength = false
   @Published var synchronizeAngle = false
   @Published var crosshair = false {
-    didSet { if crosshair && !oldValue { recordPresentation(.crosshair) }; redraw?() }
+    didSet {
+      if crosshair && !oldValue { recordPresentation(.crosshair) }
+      if !crosshair { frozenCrosshair = nil }
+      redraw?()
+    }
   }
+  @Published var frozenCrosshair: CGPoint? { didSet { redraw?() } }
   @Published var relativeOrigin: CGPoint? { didSet { redraw?() } }
   @Published var lineWidth = 1.0 { didSet { redraw?() } }
   @Published var loupe = false {
@@ -630,7 +635,9 @@ final class DesignToolsController {
       }
     }
     for window in windows {
-      if !state.editing { (window.contentView as? DesignCanvas)?.cancelDragging() }
+      if !state.editing, let canvas = window.contentView as? DesignCanvas, canvas.isDraggingMarker {
+        canvas.cancelDragging()
+      }
       if !window.isVisible { window.orderFrontRegardless() }
       window.contentView?.needsDisplay = true
     }

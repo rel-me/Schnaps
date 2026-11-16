@@ -8,6 +8,9 @@ final class DesignCanvas: NSView {
   var snapshot: (() -> ScreenSnapshot?)?
   var inputChanged: (() -> Void)?
   var isDragging: Bool { dragStart != nil }
+  var isDraggingMarker: Bool { isDragging && floatingDrag == nil }
+  private var floatingDrag: (tool: DesignTool, sample: CGPoint, label: CGRect)?
+  private var floatingLabels: [DesignTool: CGRect] = [:]
   private var dragStart: CGPoint?
   private var original: DesignMarker?
   private var originals: [DesignMarker] = []
@@ -15,6 +18,10 @@ final class DesignCanvas: NSView {
   private var hoveredID: UUID?
   private let visionCache = VisionPreviewCache()
   private var imageCache: [String: NSImage] = [:]
+  private var controlMarkers: [DesignMarker] = []
+  private var controlBounds = CGRect.null
+  private var controlUnit: String?
+  private var controlFrames: [UUID: CGRect] = [:]
   init(frame: CGRect, screen: NSScreen, state: DesignTools) {
     display = screen
     self.state = state
@@ -41,24 +48,30 @@ final class DesignCanvas: NSView {
     if let marker = displayedMarkers.reversed().first(where: {
       !$0.locked && removeButtonRect(for: $0)?.contains(point) == true
     }) { return marker }
-    return displayedMarkers.reversed().first {
-      !$0.locked && ($0.containsEditingPoint(point) || markerLabelRect(for: $0)?.contains(point) == true)
-    }
+    if let marker = displayedMarkers.reversed().first(where: {
+      !$0.locked && markerLabelRects(for: $0).contains(where: { $0.contains(point) })
+    }) { return marker }
+    return displayedMarkers.reversed().first { !$0.locked && $0.containsEditingPoint(point) }
   }
   func updateHover() {
     let id = bounds.contains(pointer) ? editableMarker(at: pointer)?.id : nil
     if id != hoveredID { hoveredID = id; needsDisplay = true }
   }
   func cursor(at point: CGPoint) -> NSCursor? {
-    guard state.editing else { return nil }
     if isDragging { return .closedHand }
+    if let hit = floatingHit(at: point) { return hit.close ? .pointingHand : .openHand }
+    guard state.editing else { return nil }
     guard let marker = editableMarker(at: point) else { return nil }
     if removeButtonRect(for: marker)?.contains(point) == true { return .pointingHand }
-    if marker.tool == .ruler && markerLabelRect(for: marker)?.contains(point) != true
+    if markerLabelRects(for: marker).contains(where: { $0.contains(point) }) { return .openHand }
+    if marker.tool == .ruler
       && hypot(point.x - marker.end.x, point.y - marker.end.y) < 24 {
       return .crosshair
     }
     if marker.tool == .guides { return marker.vertical ? .resizeLeftRight : .resizeUpDown }
+    if marker.tool != .ruler && hypot(point.x - marker.rect.maxX, point.y - marker.rect.maxY) < 20 {
+      return .crosshair
+    }
     return .openHand
   }
   var editingCursor: NSCursor? {
@@ -79,8 +92,9 @@ final class DesignCanvas: NSView {
     cursorUpdate(with: event)
   }
   var wantsMouseInput: Bool {
-    state.editing && (isDragging || (bounds.contains(pointer)
-      && (state.crosshair || editableMarker(at: pointer) != nil)))
+    isDragging || (bounds.contains(pointer)
+      && (floatingHit(at: pointer) != nil
+        || (state.editing && (state.crosshair || editableMarker(at: pointer) != nil))))
   }
   private var pointer: CGPoint {
     let p = NSEvent.mouseLocation
@@ -102,31 +116,92 @@ final class DesignCanvas: NSView {
     return CGRect(
       x: max(0, min(bounds.maxX - size.width - 12 - trailingSpace, point.x)),
       y: max(0, min(bounds.maxY - size.height - 8, point.y)),
-      width: size.width + 10, height: size.height + 6)
-  }
-  private func caption(_ text: String, at point: CGPoint) {
-    drawCaption(text, in: captionRect(text, at: point))
+      width: min(bounds.width, size.width + 10), height: size.height + 6)
   }
   private func drawCaption(_ text: String, in rect: CGRect) {
     NSColor.black.withAlphaComponent(0.86).setFill()
     NSBezierPath(roundedRect: rect, xRadius: 3, yRadius: 3).fill()
-    (text as NSString).draw(at: CGPoint(x: rect.minX + 5, y: rect.minY + 3), withAttributes: captionAttributes)
+    (text as NSString).draw(in: rect.insetBy(dx: 5, dy: 3), withAttributes: captionAttributes)
   }
   private func markerCaption(_ marker: DesignMarker) -> (String, CGPoint)? {
     if marker.tool == .guides {
       return ("\(marker.vertical ? "x" : "y") \(number(marker.vertical ? marker.x : marker.y)) pt",
         CGPoint(x: marker.vertical ? marker.x + 4 : 8, y: marker.vertical ? 8 : marker.y + 4))
     }
-    guard marker.tool == .ruler, bounds.contains(CGPoint(x: marker.x, y: marker.y)) else { return nil }
+    if marker.tool != .ruler {
+      return ("\(number(marker.width)) × \(number(marker.height)) pt · \(number(marker.x)), \(number(marker.y)) · \(number(marker.width/marker.height)):1",
+        CGPoint(x: marker.x, y: marker.y - 24))
+    }
+    guard bounds.contains(CGPoint(x: marker.x, y: marker.y)) else { return nil }
     let pixels = UserDefaults.standard.string(forKey: PreferenceKey.unit) == "px"
     let screen = NSScreen.screens.first { DesignTools.displayID($0) == marker.display } ?? display
     let units = marker.width * (pixels ? screen.backingScaleFactor : 1) / marker.scale
     return ("\(number(units)) \(pixels ? "px" : "pt") · \(number(marker.angle))° · Δ \(number(marker.end.x-marker.x)), \(number(marker.end.y-marker.y))",
       CGPoint(x: marker.x, y: marker.y + 22))
   }
-  func markerLabelRect(for marker: DesignMarker) -> CGRect? {
+  private func controlFrame(for marker: DesignMarker, avoiding controls: [CGRect]) -> CGRect? {
     guard let (text, point) = markerCaption(marker) else { return nil }
-    return captionRect(text, at: point, trailingSpace: 28)
+    let label = captionRect(text, at: point, trailingSpace: 28)
+    let size = CGSize(width: min(bounds.width, label.width + 27), height: max(24, label.height))
+    if marker.tool == .ruler || marker.tool == .guides {
+      let origin = CGPoint(x: marker.x, y: marker.y)
+      let preferred = CGRect(x: label.minX, y: label.midY - size.height / 2,
+        width: size.width, height: size.height)
+      let gap: CGFloat = marker.tool == .ruler ? (marker.calipers ? 74 : 22) : 8
+      return RulerCaptionPlacement.rect(preferred: preferred, origin: origin,
+        angle: marker.tool == .ruler ? marker.angle : marker.vertical ? 90 : 0,
+        bounds: bounds, avoiding: controls, gap: gap,
+        positiveGap: marker.tool == .ruler && marker.square ? max(gap, marker.height + 4) : gap,
+        length: marker.tool == .ruler ? marker.width : nil)
+    }
+    return OverlayControlPlacement.frame(size: size, around: marker.rect, in: bounds, avoiding: controls)
+  }
+  func markerLabelRect(for marker: DesignMarker) -> CGRect? {
+    let markers = displayedMarkers
+    let unit = UserDefaults.standard.string(forKey: PreferenceKey.unit)
+    if controlMarkers != markers || controlBounds != bounds || controlUnit != unit {
+      var controls: [CGRect] = []
+      controlFrames = [:]
+      for marker in markers {
+        if let rect = controlFrame(for: marker, avoiding: controls) {
+          controlFrames[marker.id] = rect
+          controls.append(rect)
+        }
+      }
+      controlMarkers = markers
+      controlBounds = bounds
+      controlUnit = unit
+    }
+    guard let group = controlFrames[marker.id] ?? controlFrame(for: marker, avoiding: []),
+      let (text, _) = markerCaption(marker) else { return nil }
+    let height = (text as NSString).size(withAttributes: captionAttributes).height + 6
+    return CGRect(x: group.minX, y: group.midY - height / 2,
+      width: max(0, group.width - 27), height: height)
+  }
+  private func secondaryCaptions(for marker: DesignMarker) -> [(String, CGRect)] {
+    if marker.tool == .screens {
+      let top = min(marker.height, marker.topInset)
+      let bottom = min(marker.height - top, marker.bottomInset + marker.keyboardHeight)
+      let left = min(marker.width, marker.leftInset)
+      let right = min(marker.width - left, marker.rightInset)
+      let text = "Usable \(number(marker.width-left-right)) × \(number(marker.height-top-bottom)) pt"
+      return [(text, captionRect(text, at: CGPoint(x: marker.x + left + 4, y: marker.y + top + 4)))]
+    }
+    if marker.tool == .guides,
+      let next = displayedMarkers.filter({ $0.tool == .guides && $0.vertical == marker.vertical
+        && ($0.vertical ? $0.x > marker.x : $0.y > marker.y) }).min(by: {
+          (marker.vertical ? $0.x : $0.y) < (marker.vertical ? $1.x : $1.y)
+        }) {
+      let distance = marker.vertical ? next.x - marker.x : next.y - marker.y
+      let text = "\(number(distance)) pt"
+      return [(text, captionRect(text, at: CGPoint(
+        x: marker.vertical ? (next.x + marker.x) / 2 : 50,
+        y: marker.vertical ? 40 : (next.y + marker.y) / 2)))]
+    }
+    return []
+  }
+  func markerLabelRects(for marker: DesignMarker) -> [CGRect] {
+    [markerLabelRect(for: marker)].compactMap { $0 } + secondaryCaptions(for: marker).map { $0.1 }
   }
   func removeButtonRect(for marker: DesignMarker) -> CGRect? {
     guard state.editing, !marker.locked, let label = markerLabelRect(for: marker) else { return nil }
@@ -136,6 +211,9 @@ final class DesignCanvas: NSView {
     guard let (text, _) = markerCaption(marker), let label = markerLabelRect(for: marker) else { return }
     drawCaption(text, in: label)
     guard let button = removeButtonRect(for: marker) else { return }
+    drawCloseButton(in: button)
+  }
+  private func drawCloseButton(in button: CGRect) {
     NSColor.black.withAlphaComponent(0.9).setFill()
     NSBezierPath(roundedRect: button, xRadius: 5, yRadius: 5).fill()
     line(CGPoint(x: button.minX + 8, y: button.minY + 8),
@@ -161,25 +239,24 @@ final class DesignCanvas: NSView {
       clearVisionCache()
     }
     for marker in displayedMarkers { draw(marker, frame: frame) }
+    // Draw controls above every tool, matching their priority during hit testing.
+    for marker in displayedMarkers {
+      for (text, rect) in secondaryCaptions(for: marker) { drawCaption(text, in: rect) }
+      drawMarkerCaption(marker)
+    }
     let point = pointer
-    if state.crosshair, bounds.contains(point) {
+    let crosshair = floatingPoint(.crosshair)
+    if state.crosshair, bounds.contains(crosshair) {
       var color = MeasurementPreferences.color(PreferenceKey.guideColor)
-      if UserDefaults.standard.bool(forKey: PreferenceKey.autoContrast), let pixel = sample(point) {
+      if UserDefaults.standard.bool(forKey: PreferenceKey.autoContrast), let pixel = sample(crosshair) {
         color = pixel.luminance > 0.45 ? .black : .white
       }
       line(
-        CGPoint(x: 0, y: point.y), CGPoint(x: bounds.width, y: point.y), color: color,
+        CGPoint(x: 0, y: crosshair.y), CGPoint(x: bounds.width, y: crosshair.y), color: color,
         width: state.lineWidth)
       line(
-        CGPoint(x: point.x, y: 0), CGPoint(x: point.x, y: bounds.height), color: color,
+        CGPoint(x: crosshair.x, y: 0), CGPoint(x: crosshair.x, y: bounds.height), color: color,
         width: state.lineWidth)
-      let relative =
-        state.relativeOrigin.map { origin in
-          CGPoint(x: NSEvent.mouseLocation.x - origin.x, y: origin.y - NSEvent.mouseLocation.y)
-        } ?? point
-      caption(
-        "x \(number(relative.x))  y \(number(relative.y)) pt",
-        at: CGPoint(x: point.x + 14, y: point.y + 14))
     }
     if state.loupe {
       let frozen =
@@ -187,6 +264,10 @@ final class DesignCanvas: NSView {
           CGPoint(x: $0.x - display.frame.minX, y: display.frame.maxY - $0.y)
         } ?? point
       if bounds.contains(frozen) { drawLoupe(at: frozen, frame: frame) }
+    }
+    for tool in [DesignTool.crosshair, .loupe] where floatingEnabled(tool) {
+      drawCaption(floatingText(tool), in: floatingLabelRect(tool))
+      drawCloseButton(in: floatingCloseRect(tool))
     }
   }
   private func draw(_ marker: DesignMarker, frame: ScreenSnapshot?) {
@@ -203,21 +284,6 @@ final class DesignCanvas: NSView {
         marker.vertical
         ? CGPoint(x: marker.x, y: bounds.height) : CGPoint(x: bounds.width, y: marker.y)
       line(a, b, color: color, width: selected ? 2 : 1)
-      drawMarkerCaption(marker)
-      let peers = state.markers.filter {
-        $0.display == marker.display && $0.isVisible && $0.tool == .guides && $0.vertical == marker.vertical
-          && ($0.vertical ? $0.x > marker.x : $0.y > marker.y)
-      }
-      if let next = peers.min(by: {
-        (marker.vertical ? $0.x : $0.y) < (marker.vertical ? $1.x : $1.y)
-      }) {
-        let distance = marker.vertical ? next.x - marker.x : next.y - marker.y
-        caption(
-          "\(number(distance)) pt",
-          at: CGPoint(
-            x: marker.vertical ? (next.x + marker.x) / 2 : 50,
-            y: marker.vertical ? 40 : (next.y + marker.y) / 2))
-      }
       return
     }
     if let name = marker.imageName, name == URL(fileURLWithPath: name).lastPathComponent {
@@ -298,9 +364,7 @@ final class DesignCanvas: NSView {
           x: marker.rect.maxX - right, y: marker.y + top, width: right,
           height: marker.height - top - bottom),
       ] { NSBezierPath(rect: rect).fill() }
-      caption(
-        "Usable \(number(marker.width-left-right)) × \(number(marker.height-top-bottom)) pt",
-        at: CGPoint(x: marker.x + left + 4, y: marker.y + top + 4))
+
     }
     if marker.safeAreas {
       for inset in [0.05, 0.1] {
@@ -310,9 +374,6 @@ final class DesignCanvas: NSView {
         path.stroke()
       }
     }
-    caption(
-      "\(number(marker.width)) × \(number(marker.height)) pt · \(number(marker.x)), \(number(marker.y)) · \(number(marker.width/marker.height)):1",
-      at: CGPoint(x: marker.x, y: marker.y - 24))
     if selected {
       NSColor.controlAccentColor.setFill()
       for p in [marker.rect.origin, CGPoint(x: marker.rect.maxX, y: marker.rect.maxY)] {
@@ -366,7 +427,6 @@ final class DesignCanvas: NSView {
         handle.stroke()
       }
     }
-    drawMarkerCaption(marker)
   }
   private func sample(_ point: CGPoint) -> InspectorColor? {
     guard let frame = snapshot?() else { return nil }
@@ -392,7 +452,6 @@ final class DesignCanvas: NSView {
   }
   private func drawLoupe(at point: CGPoint, frame: ScreenSnapshot?) {
     guard let frame else {
-      caption("Waiting for screen pixels…", at: point)
       return
     }
     let size = 180.0
@@ -405,9 +464,7 @@ final class DesignCanvas: NSView {
       CGRect(x: 0, y: 0, width: frame.image.width, height: frame.image.height))
     guard let filtered = visionCache.image(source: frame.image, crop: cropRect, mode: state.vision)
     else { return }
-    let rect = CGRect(
-      x: min(bounds.width - size - 8, max(8, point.x + 24)),
-      y: min(bounds.height - size - 58, max(8, point.y + 24)), width: size, height: size)
+    let rect = loupeRect(at: point)
     NSColor.windowBackgroundColor.setFill()
     NSBezierPath(rect: rect.insetBy(dx: -2, dy: -2)).fill()
     let target = CGRect(
@@ -447,7 +504,6 @@ final class DesignCanvas: NSView {
     outline.stroke()
     if let color = sample(point) {
       let value = color.formatted(state.colorFormat)
-      caption(value, at: CGPoint(x: rect.minX, y: rect.maxY + 5))
       DispatchQueue.main.async { [weak self] in
         guard let self else { return }
         self.state.colorSample = color
@@ -459,8 +515,79 @@ final class DesignCanvas: NSView {
       }
     }
   }
+  private func floatingEnabled(_ tool: DesignTool) -> Bool {
+    (tool == .loupe ? state.loupe : state.crosshair) && bounds.contains(floatingPoint(tool))
+  }
+  private func floatingPoint(_ tool: DesignTool) -> CGPoint {
+    let global = tool == .loupe ? state.frozenLoupe : state.frozenCrosshair
+    return global.map { CGPoint(x: $0.x - display.frame.minX, y: display.frame.maxY - $0.y) } ?? pointer
+  }
+  private func loupeRect(at point: CGPoint) -> CGRect {
+    OverlayControlPlacement.clamped(CGRect(x: point.x + 24, y: point.y + 24, width: 180, height: 180),
+      in: bounds.insetBy(dx: 8, dy: 8))
+  }
+  func floatingText(_ tool: DesignTool) -> String {
+    if tool == .loupe {
+      let zoom = number(max(2, min(32, state.zoom)))
+      let color = sample(floatingPoint(tool))?.formatted(state.colorFormat) ?? "Waiting for screen pixels…"
+      return "Loupe · \(zoom)× · \(color)"
+    }
+    let point = floatingPoint(tool)
+    let relative = state.relativeOrigin.map {
+      CGPoint(x: display.frame.minX + point.x - $0.x, y: $0.y - display.frame.maxY + point.y)
+    } ?? point
+    return "Crosshair · x \(number(relative.x))  y \(number(relative.y)) pt"
+  }
+  func floatingLabelRect(_ tool: DesignTool) -> CGRect {
+    let text = floatingText(tool)
+    let size = (text as NSString).size(withAttributes: captionAttributes)
+    let origin = floatingLabels[tool].map { CGPoint(x: $0.minX, y: $0.midY - 12) } ?? CGPoint(
+      x: bounds.maxX - size.width - 53, y: tool == .crosshair ? 8 : 42)
+    let group = OverlayControlPlacement.clamped(
+      CGRect(origin: origin, size: CGSize(width: size.width + 37, height: 24)), in: bounds)
+    return CGRect(x: group.minX, y: group.midY - (size.height + 6) / 2,
+      width: group.width - 27, height: size.height + 6)
+  }
+  func floatingCloseRect(_ tool: DesignTool) -> CGRect {
+    let label = floatingLabelRect(tool)
+    return CGRect(x: label.maxX + 3, y: label.midY - 12, width: 24, height: 24)
+  }
+  private func floatingHit(at point: CGPoint) -> (tool: DesignTool, close: Bool)? {
+    for tool in [DesignTool.loupe, .crosshair] where floatingEnabled(tool) {
+      if floatingCloseRect(tool).contains(point) { return (tool, true) }
+      if floatingLabelRect(tool).contains(point) { return (tool, false) }
+    }
+    // Keep normal tool use click-through except for the explicit label controls.
+    guard state.editing else { return nil }
+    // Pointer-following visuals cannot be chased; their stable labels are always grabbable.
+    if floatingEnabled(.loupe), state.frozenLoupe != nil, loupeRect(at: floatingPoint(.loupe)).contains(point) {
+      return (.loupe, false)
+    }
+    if floatingEnabled(.crosshair), state.frozenCrosshair != nil {
+      let anchor = floatingPoint(.crosshair)
+      if abs(anchor.x - point.x) < 8 || abs(anchor.y - point.y) < 8 { return (.crosshair, false) }
+    }
+    return nil
+  }
   override func mouseDown(with event: NSEvent) {
     let point = convert(event.locationInWindow, from: nil)
+    if let hit = floatingHit(at: point) {
+      if hit.close {
+        if hit.tool == .loupe { state.loupe = false } else { state.crosshair = false }
+        floatingLabels[hit.tool] = nil
+        inputChanged?()
+        return
+      }
+      floatingDrag = (hit.tool, floatingPoint(hit.tool), floatingLabelRect(hit.tool))
+      let global = CGPoint(x: display.frame.minX + floatingPoint(hit.tool).x,
+        y: display.frame.maxY - floatingPoint(hit.tool).y)
+      if hit.tool == .loupe { state.frozenLoupe = global } else { state.frozenCrosshair = global }
+      window?.makeKey()
+      window?.makeFirstResponder(self)
+      dragStart = point
+      NSCursor.closedHand.set()
+      return
+    }
     guard let selected = editableMarker(at: point)
     else {
       if state.crosshair {
@@ -485,16 +612,27 @@ final class DesignCanvas: NSView {
     originals = state.markers
     dragStart = point
     draggingEnd =
-      marker.tool == .ruler && markerLabelRect(for: marker)?.contains(point) != true
+      marker.tool == .ruler && !markerLabelRects(for: marker).contains(where: { $0.contains(point) })
       && hypot(point.x - marker.end.x, point.y - marker.end.y) < 24
     resizing =
       marker.tool != .ruler && marker.tool != .guides
+      && !markerLabelRects(for: marker).contains(where: { $0.contains(point) })
       && hypot(point.x - marker.rect.maxX, point.y - marker.rect.maxY) < 20
     NSCursor.closedHand.set()
   }
   override func mouseDragged(with event: NSEvent) {
-    guard let start = dragStart, let marker = original else { return }
+    guard let start = dragStart else { return }
     var point = convert(event.locationInWindow, from: nil)
+    if let drag = floatingDrag {
+      let sample = CGPoint(x: max(0, min(bounds.maxX - 1, drag.sample.x + point.x - start.x)),
+        y: max(0, min(bounds.maxY - 1, drag.sample.y + point.y - start.y)))
+      let global = CGPoint(x: display.frame.minX + sample.x, y: display.frame.maxY - sample.y)
+      if drag.tool == .loupe { state.frozenLoupe = global } else { state.frozenCrosshair = global }
+      floatingLabels[drag.tool] = drag.label.offsetBy(dx: point.x - start.x, dy: point.y - start.y)
+      needsDisplay = true
+      return
+    }
+    guard let marker = original else { return }
     if event.modifierFlags.contains(.control), let frame = snapshot?(),
       let edges = frame.dimensions(
         at: point,
@@ -540,6 +678,7 @@ final class DesignCanvas: NSView {
   func cancelDragging() {
     guard isDragging else { return }
     dragStart = nil
+    floatingDrag = nil
     original = nil
     originals = []
     state.endDragging()
@@ -547,6 +686,7 @@ final class DesignCanvas: NSView {
   override func mouseUp(with event: NSEvent) {
     guard isDragging else { return }
     dragStart = nil
+    floatingDrag = nil
     original = nil
     originals = []
     state.reanchorRulers()
