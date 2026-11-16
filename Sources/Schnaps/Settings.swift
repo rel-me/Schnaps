@@ -82,6 +82,7 @@ struct SettingsView: View {
     @StateObject private var membership = ProMembership()
     @StateObject private var loginItem = LoginItem()
     @State private var settingsError: String?
+    @State private var manualScreenshotPadding = 0
     @AppStorage(PreferenceKey.unit) private var unit = MeasurementUnit.points.rawValue
     @AppStorage(PreferenceKey.tolerance) private var tolerance = TolerancePreset.medium.rawValue
     @AppStorage(PreferenceKey.scrollTolerance) private var scrollTolerance = true
@@ -268,11 +269,23 @@ struct SettingsView: View {
             }
             Section {
                 LabeledContent(L("Padding")) {
-                    HStack {
-                        Slider(value: Binding(get: { Double(screenshotPadding) }, set: { screenshotPadding=Int($0) }), in: 0...101, step: 1)
-                            .accessibilityLabel(L("Padding"))
-                        Text(screenshotPadding > 100 ? L("Auto") : "\(screenshotPadding) pt").monospacedDigit().frame(minWidth: 46, alignment: .trailing)
-                    }.frame(maxWidth: 250)
+                    HStack(spacing: 12) {
+                        SliderValueInput(title: L("Padding"),
+                            value: Binding(get: { Double(screenshotPadding > 100 ? manualScreenshotPadding : screenshotPadding) },
+                                           set: { screenshotPadding = Int($0) }),
+                            range: 0...100, step: 1, unit: "pt")
+                            .disabled(screenshotPadding > 100)
+                        Toggle(L("Auto"), isOn: Binding(get: { screenshotPadding > 100 },
+                            set: { automatic in
+                                if automatic {
+                                    manualScreenshotPadding = min(100, max(0, screenshotPadding))
+                                    screenshotPadding = 101
+                                } else {
+                                    screenshotPadding = manualScreenshotPadding
+                                }
+                            }))
+                            .toggleStyle(.checkbox)
+                    }.frame(maxWidth: 340)
                 }
             } footer: {
                 Text(L("Hold Option to toggle padding when capturing.")).font(.footnote).padding(.top,-7)
@@ -337,16 +350,9 @@ struct SettingsView: View {
     }
     private func toleranceRow(_ title: String, value: Binding<Int>) -> some View {
         LabeledContent(L(title)) {
-            HStack {
-                Slider(value: Binding(get: { Double(value.wrappedValue) }, set: { value.wrappedValue=Int($0.rounded()) }), in: 0...100)
-                    .accessibilityLabel(L(title))
-                TextField(L(title), value: Binding(get: { value.wrappedValue }, set: { value.wrappedValue = min(100, max(0, $0)) }), format: .number.grouping(.never))
-                    .labelsHidden()
-                    .textFieldStyle(.roundedBorder)
-                    .multilineTextAlignment(.trailing)
-                    .monospacedDigit()
-                    .frame(width: 50)
-            }.frame(maxWidth: 260)
+            SliderValueInput(title: L(title),
+                value: Binding(get: { Double(value.wrappedValue) }, set: { value.wrappedValue = Int($0) }),
+                range: 0...100, step: 1)
         }
         .accessibilityElement(children: .contain)
     }

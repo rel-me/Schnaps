@@ -165,9 +165,9 @@ struct ToolInspectorView: View {
       }
       Section("Style") {
         LabeledContent("Opacity") {
-          Slider(
-            value: Binding(get: { marker.opacity }, set: { v in tools.update { $0.opacity = v } }),
-            in: 0.05...1)
+          SliderValueInput(title: "Opacity",
+            value: Binding(get: { marker.opacity * 100 }, set: { v in tools.update { $0.opacity = v / 100 } }),
+            range: 5...100, unit: "%")
         }
         ColorPicker(
           "Marker color",
@@ -258,7 +258,9 @@ struct ToolInspectorView: View {
     Section {
       Toggle(
         "Crosshair", isOn: Binding(get: { tools.crosshair }, set: { _ in tools.show?(.crosshair) }))
-      LabeledContent("Line width") { Slider(value: $tools.lineWidth, in: 1...8) }
+      LabeledContent("Line width") {
+        SliderValueInput(title: "Line width", value: $tools.lineWidth, range: 1...8, unit: "pt")
+      }
       Button("Reset Origin") { tools.relativeOrigin = nil }
     } header: {
       Text("Coordinates")
@@ -274,7 +276,9 @@ struct ToolInspectorView: View {
         Toggle("Loupe", isOn: Binding(get: { tools.loupe }, set: { _ in tools.show?(.loupe) }))
         Text("Arrows pin and move one pixel; Shift-Arrows move ten. Space pins or resumes following the pointer. C copies; Shift-C saves a swatch.")
           .font(.footnote).foregroundStyle(.secondary)
-        LabeledContent("Magnification") { Slider(value: $tools.zoom, in: 2...32) }
+        LabeledContent("Magnification") {
+          SliderValueInput(title: "Magnification", value: $tools.zoom, range: 2...32, unit: "×")
+        }
         Toggle("Pixel grid", isOn: $tools.pixelGrid)
         Picker("Color format", selection: $tools.colorFormat) {
           ForEach(
