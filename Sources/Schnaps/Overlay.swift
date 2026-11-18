@@ -254,6 +254,7 @@ final class MeasurementView: NSView {
     struct LabelControl {
         let target: ControlTarget
         let text: String
+        let detail: String?
         let label: CGRect
         let close: CGRect
         let group: CGRect
@@ -296,7 +297,7 @@ final class MeasurementView: NSView {
         setAccessibilityRole(.group)
         setAccessibilityIdentifier("measurement-overlay")
         setAccessibilityLabel("Measurement canvas")
-        setAccessibilityHelp("Drag to measure. S switches tools, U switches units, T changes tolerance, C copies a screenshot, P saves, Enter copies dimensions, Escape exits.")
+        setAccessibilityHelp("Drag to measure. S switches tools, U switches units, Scroll up/down or T/Shift-T changes tolerance, C copies a screenshot, P saves, Enter copies dimensions, Escape exits.")
         appearance = MeasurementPreferences.appearance
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
@@ -627,7 +628,7 @@ final class MeasurementView: NSView {
         let preset=MeasurementPreferences.selectedTolerance.cycled(backward:backward)
         MeasurementPreferences.selectTolerance(preset)
         synchronizePreferences()
-        flash(L("Tolerance") + ": " + L(preset.title))
+        if mode != .findDimensions { flash(toleranceTitle) }
     }
 
     func synchronizeTolerance() { synchronizePreferences() }
@@ -638,7 +639,10 @@ final class MeasurementView: NSView {
         appearance=MeasurementPreferences.appearance
         window?.invalidateCursorRects(for:self)
         if mode == .findDimensions {
-            if heldDimensions != nil { heldDimensions=dimensions(at:anchor) }
+            if let held = heldDimensions {
+                // Label dragging changes the drag anchor; remeasure at the held axes instead.
+                heldDimensions = dimensions(at: CGPoint(x: held.vertical.start.x, y: held.horizontal.start.y))
+            }
             if previousTolerance != tolerance, detectionRegion != nil { detectSelectedArea() }
         }
         updateLiveDimensions(); needsDisplay=true
@@ -659,7 +663,6 @@ final class MeasurementView: NSView {
         let preset = MeasurementPreferences.selectedTolerance.stepped(by: steps)
         MeasurementPreferences.selectTolerance(preset)
         synchronizePreferences()
-        flash(L("Tolerance") + ": " + L(preset.title))
     }
 
     private func pin() {
@@ -753,7 +756,9 @@ final class MeasurementView: NSView {
         let description = selection.map { areaLabelText($0) } ?? (heldDimensions ?? liveDimensions).map {
             FindDimensionsLabel.text(for: $0.rect, presentation: presentation, scale: scale)
         }
-        setAccessibilityValue(description.map { $0 + (showsSnapIndicator ? ", " + L("Snap") : "") } ?? "No active measurement")
+        var accessibility = description.map { $0 + (showsSnapIndicator ? ", " + L("Snap") : "") } ?? "No active measurement"
+        if mode == .findDimensions { accessibility += ", " + toleranceTitle }
+        setAccessibilityValue(accessibility)
         if let frozenImage, UserDefaults.standard.bool(forKey: PreferenceKey.freezeScreen) {
             frozenImage.draw(in: bounds, from: .zero,
                 operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
@@ -785,7 +790,7 @@ final class MeasurementView: NSView {
             drawDistance(dimensions.vertical, held: heldDimensions != nil)
         }
         for control in labelControls() {
-            drawPill(control.text, in: control.label)
+            drawPill(control.text, in: control.label, detail: control.detail)
             NSColor.windowBackgroundColor.setFill()
             NSBezierPath(roundedRect: control.close, xRadius: 4, yRadius: 4).fill()
             line(from: CGPoint(x: control.close.minX + 8, y: control.close.minY + 8),
@@ -804,20 +809,44 @@ final class MeasurementView: NSView {
         }
     }
 
+    private var toleranceTitle: String {
+        L("Tolerance") + ": " + L(MeasurementPreferences.selectedTolerance.title) + " (\(tolerance))"
+    }
+    private func toleranceDetail(for target: ControlTarget) -> String? {
+        guard mode == .findDimensions else { return nil }
+        switch target {
+        case .selection, .held, .live:
+            let preset = MeasurementPreferences.selectedTolerance
+            return L(preset == .medium ? "Med" : preset.title)
+        default: return nil
+        }
+    }
+    private var detailAttributes: [NSAttributedString.Key: Any] {
+        [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor]
+    }
+
+    private func toleranceBadgeWidth(_ text: String) -> CGFloat {
+        (text as NSString).size(withAttributes: detailAttributes).width + 16
+    }
+
     func labelControls() -> [LabelControl] {
         var controls: [LabelControl] = []
         func append(_ target: ControlTarget, text: String, group: CGRect) {
+            let detail = toleranceDetail(for: target)
             let label = CGRect(x: group.minX, y: group.minY, width: max(0, group.width - 27), height: 28)
-            controls.append(LabelControl(target: target, text: text, label: label,
+            controls.append(LabelControl(target: target, text: text, detail: detail, label: label,
                 close: CGRect(x: label.maxX + 3, y: label.minY + 2, width: 24, height: 24), group: group))
         }
-        func size(_ text: String, height: CGFloat = 28) -> CGSize {
-            CGSize(width: (text as NSString).size(withAttributes: textAttributes).width + 49, height: height)
+        func size(_ text: String, height: CGFloat = 28, target: ControlTarget? = nil) -> CGSize {
+            let detail = target.flatMap { toleranceDetail(for: $0) }
+            let textWidth = (text as NSString).size(withAttributes: textAttributes).width
+            let badgeWidth = detail.map { toleranceBadgeWidth($0) + 12 } ?? 0
+            return CGSize(width: textWidth + badgeWidth + 49, height: height)
         }
         func area(_ rect: CGRect, target: ControlTarget, prefix: String = "") {
             let text = prefix + areaLabelText(rect)
             let group = AreaMeasurementLabel.frame(for: rect,
-                size: size(text, height: target == .selection && showsSnapIndicator ? 48 : 28),
+                size: size(text, height: target == .selection && showsSnapIndicator ? 48 : 28, target: target),
                 in: bounds, avoiding: controls.map(\.group))
             append(target, text: text, group: group)
         }
@@ -826,7 +855,7 @@ final class MeasurementView: NSView {
         func dimensions(_ value: Dimensions, target: ControlTarget) {
             let text = FindDimensionsLabel.text(for: value.rect, presentation: presentation, scale: scale)
             let center = CGPoint(x: value.vertical.start.x, y: value.horizontal.start.y)
-            let group = FindDimensionsLabel.frame(at: center, size: size(text), in: bounds,
+            let group = FindDimensionsLabel.frame(at: center, size: size(text, target: target), in: bounds,
                 avoiding: controls.map(\.group))
             append(target, text: text, group: group)
         }
@@ -1015,11 +1044,23 @@ final class MeasurementView: NSView {
         drawPill(text, in: rect)
         return rect
     }
-    private func drawPill(_ text: String, in rect: CGRect) {
+    private func drawPill(_ text: String, in rect: CGRect, detail: String? = nil) {
         NSColor.windowBackgroundColor.setFill()
         rect.fill()
         var attributes = textAttributes
         attributes[.foregroundColor] = NSColor.labelColor
-        (text as NSString).draw(in: rect.insetBy(dx: 11, dy: 6), withAttributes: attributes)
+        let badgeWidth = detail.map { toleranceBadgeWidth($0) } ?? 0
+        let primary = CGRect(x: rect.minX + 11, y: rect.minY + 6,
+            width: max(0, rect.width - 22 - (detail == nil ? 0 : badgeWidth + 12)), height: rect.height - 12)
+        (text as NSString).draw(in: primary, withAttributes: attributes)
+        if let detail {
+            let x = rect.maxX - 11 - badgeWidth
+            let icon = NSImage(systemSymbolName: "dial.low", accessibilityDescription: L("Tolerance"))?
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [.secondaryLabelColor]))
+            icon?.draw(in: CGRect(x: x, y: rect.midY - 6, width: 12, height: 12),
+                from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+            (detail as NSString).draw(in: CGRect(x: x + 16, y: rect.midY - 7,
+                width: max(0, badgeWidth - 16), height: 14), withAttributes: detailAttributes)
+        }
     }
 }
