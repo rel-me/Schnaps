@@ -88,7 +88,7 @@ func everyMarkerHasVisibleGrabbableControlsAtDisplayEdges(tool: DesignTool) thro
 }
 
 @Test(arguments: [DesignTool.loupe, .crosshair], [false, true]) @MainActor
-func floatingToolLabelsDragAndClose(tool: DesignTool, editing: Bool) throws {
+func floatingToolLabelsDragWithoutCloseControls(tool: DesignTool, editing: Bool) throws {
   let screen = try #require(NSScreen.main)
   let name = "Schnaps.FloatingControls.Tests." + UUID().uuidString
   let defaults = try #require(UserDefaults(suiteName: name))
@@ -113,7 +113,7 @@ func floatingToolLabelsDragAndClose(tool: DesignTool, editing: Bool) throws {
     #expect(stats.contains("x 200.0  y 200.0 pt"))
   }
   let label = canvas.floatingLabelRect(tool)
-  #expect(canvas.bounds.contains(label.union(canvas.floatingCloseRect(tool))))
+  #expect(canvas.bounds.contains(label))
   let start = CGPoint(x: label.midX, y: label.midY)
   #expect(canvas.cursor(at: start) === NSCursor.openHand)
   canvas.mouseDown(with: try mouse(.leftMouseDown, at: start, in: canvas))
@@ -128,11 +128,9 @@ func floatingToolLabelsDragAndClose(tool: DesignTool, editing: Bool) throws {
   state.editing = false
   #expect(canvas.cursor(at: CGPoint(x: movedLabel.midX, y: movedLabel.midY)) === NSCursor.openHand)
   state.editing = editing
-  let close = canvas.floatingCloseRect(tool)
-  let point = CGPoint(x: close.midX, y: close.midY)
-  #expect(canvas.cursor(at: point) === NSCursor.pointingHand)
-  canvas.mouseDown(with: try mouse(.leftMouseDown, at: point, in: canvas))
-  #expect(!(tool == .loupe ? state.loupe : state.crosshair))
+  let besideLabel = CGPoint(x: movedLabel.maxX + 15, y: movedLabel.midY)
+  #expect(canvas.cursor(at: besideLabel) == nil)
+  #expect(tool == .loupe ? state.loupe : state.crosshair)
   #expect(!canvas.isDragging)
 }
 
@@ -158,7 +156,8 @@ func measurementAreaLabelsDragAndClose(inFindMode: Bool) throws {
   #expect(view.selection == first.offsetBy(dx: 30, dy: 40))
   #expect(view.pinned == [other])
   let active = try #require(view.labelControls().first { $0.target == .selection })
-  let close = CGPoint(x: active.close.midX, y: active.close.midY)
+  let button = try #require(active.close)
+  let close = CGPoint(x: button.midX, y: button.midY)
   #expect(view.interactionCursor(at: close) === NSCursor.pointingHand)
   view.mouseDown(with: try mouse(.leftMouseDown, at: close, in: view))
   view.mouseUp(with: try mouse(.leftMouseUp, at: close, in: view))
@@ -184,7 +183,8 @@ func pinnedDistanceLabelsMoveAndCloseOnlyTheirSpans(paired: Bool) throws {
   #expect(view.pinnedDistances.first?.start == CGPoint(x: 120, y: 180))
   #expect(view.pinnedDistances.last == other)
   let moved = try #require(view.labelControls().first)
-  let close = CGPoint(x: moved.close.midX, y: moved.close.midY)
+  let button = try #require(moved.close)
+  let close = CGPoint(x: button.midX, y: button.midY)
   view.mouseDown(with: try mouse(.leftMouseDown, at: close, in: view))
   view.mouseUp(with: try mouse(.leftMouseUp, at: close, in: view))
   #expect(view.pinnedDistances == [other])
@@ -207,7 +207,8 @@ func pinnedDistanceLabelsMoveAndCloseOnlyTheirSpans(paired: Bool) throws {
   let moved = try #require(view.labelControls().first)
   #expect(moved.text.contains("240"))
   #expect(view.selection == nil)
-  let close = CGPoint(x: moved.close.midX, y: moved.close.midY)
+  let button = try #require(moved.close)
+  let close = CGPoint(x: button.midX, y: button.midY)
   view.mouseDown(with: try mouse(.leftMouseDown, at: close, in: view))
   view.mouseUp(with: try mouse(.leftMouseUp, at: close, in: view))
   #expect(view.labelControls().isEmpty)
@@ -256,7 +257,7 @@ func pinnedDistanceLabelsMoveAndCloseOnlyTheirSpans(paired: Bool) throws {
   #expect(view.pinned == [first])
 }
 
-@Test @MainActor func heldDimensionsCanMoveByTheirLabelAndClose() throws {
+@Test @MainActor func heldDimensionsCanMoveByTheirLabelWithoutCloseControl() throws {
   let context = try #require(CGContext(data: nil, width: 400, height: 400, bitsPerComponent: 8,
     bytesPerRow: 1600, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
   context.setFillColor(NSColor.white.cgColor)
@@ -279,10 +280,8 @@ func pinnedDistanceLabelsMoveAndCloseOnlyTheirSpans(paired: Bool) throws {
   view.mouseUp(with: try mouse(.leftMouseUp, at: end, in: view))
   #expect(view.heldDimensions?.rect == original.rect.offsetBy(dx: 10, dy: 20))
   let moved = try #require(view.labelControls().first { $0.target == .held })
-  let close = CGPoint(x: moved.close.midX, y: moved.close.midY)
-  view.mouseDown(with: try mouse(.leftMouseDown, at: close, in: view))
-  view.mouseUp(with: try mouse(.leftMouseUp, at: close, in: view))
-  #expect(view.heldDimensions == nil)
+  #expect(moved.close == nil)
+  #expect(moved.group == moved.label)
   #expect(view.selection == nil)
 }
 
@@ -364,8 +363,8 @@ func frozenFloatingToolsOnlyInterceptTheirOwningDisplay(tool: DesignTool) throws
   #expect(!state.editing)
   #expect(canvas.floatingText(.loupe).contains("12.0×"))
   #expect(canvas.floatingText(.loupe).contains("#FF0000"))
-  let close = canvas.floatingCloseRect(.loupe)
-  #expect(canvas.cursor(at: CGPoint(x: close.midX, y: close.midY)) === NSCursor.pointingHand)
+  let label = canvas.floatingLabelRect(.loupe)
+  #expect(canvas.cursor(at: CGPoint(x: label.midX, y: label.midY)) === NSCursor.openHand)
   state.zoom = 16
   #expect(canvas.floatingText(.loupe).contains("16.0×"))
 }

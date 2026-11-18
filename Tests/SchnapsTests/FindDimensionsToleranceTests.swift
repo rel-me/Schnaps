@@ -42,16 +42,21 @@ extension OverlayStartupTests {
                 modifierFlags: backward ? [.shift] : [], timestamp: 0, windowNumber: panel.windowNumber,
                 context: nil, characters: backward ? "T" : "t", charactersIgnoringModifiers: "t", isARepeat: false, keyCode: 17))
         }
-        func scroll(_ delta: Int32) throws {
-            let cgEvent = try #require(CGEvent(scrollWheelEvent2Source: nil, units: .line,
+        func scroll(_ delta: Int32, units: CGScrollEventUnit = .line, phase: CGScrollPhase? = nil,
+                    momentum: CGMomentumScrollPhase? = nil) throws {
+            let cgEvent = try #require(CGEvent(scrollWheelEvent2Source: nil, units: units,
                 wheelCount: 1, wheel1: delta, wheel2: 0, wheel3: 0))
+            if let phase { cgEvent.setIntegerValueField(.scrollWheelEventScrollPhase, value: Int64(phase.rawValue)) }
+            if let momentum { cgEvent.setIntegerValueField(.scrollWheelEventMomentumPhase, value: Int64(momentum.rawValue)) }
             view.scrollWheel(with: try #require(NSEvent(cgEvent: cgEvent)))
         }
         for point in [CGPoint(x: 2, y: 2), CGPoint(x: 798, y: 2),
                       CGPoint(x: 2, y: 598), CGPoint(x: 798, y: 598)] {
             view.mouseMoved(with: try mouse(.mouseMoved, at: point))
             let control = try #require(view.labelControls().first { $0.target == .live })
-            let group = control.label.union(control.close)
+            let group = control.label
+            #expect(control.close == nil)
+            #expect(control.group == group)
             #expect(bounds.contains(group))
             #expect(group.maxX <= point.x - 8 || group.minX >= point.x + 8)
             #expect(group.maxY <= point.y - 8 || group.minY >= point.y + 8)
@@ -60,11 +65,31 @@ extension OverlayStartupTests {
         let live = try #require(view.labelControls().first { $0.target == .live })
         #expect(live.detail == L("Med"))
         #expect(live.label.height == 28)
-        #expect(bounds.contains(live.label.union(live.close)))
-        try scroll(1)
+        #expect(bounds.contains(live.label))
+        try scroll(-1, units: .pixel)
+        #expect(MeasurementPreferences.selectedTolerance == .low)
+        #expect(view.labelControls().first { $0.target == .live }?.detail == L("Low"))
+        try scroll(8)
+        #expect(MeasurementPreferences.selectedTolerance == .medium)
+        try scroll(8)
         #expect(MeasurementPreferences.selectedTolerance == .high)
         #expect(view.labelControls().first { $0.target == .live }?.detail == L("High"))
-        try scroll(-1)
+        try scroll(-8)
+        #expect(MeasurementPreferences.selectedTolerance == .medium)
+
+        try scroll(-1, units: .pixel, phase: .began)
+        #expect(MeasurementPreferences.selectedTolerance == .low)
+        try scroll(-20, units: .pixel, phase: .changed)
+        #expect(MeasurementPreferences.selectedTolerance == .low)
+        try scroll(-25, units: .pixel, phase: .changed)
+        #expect(MeasurementPreferences.selectedTolerance == .zero)
+        try scroll(0, units: .pixel, phase: .ended)
+        try scroll(80, units: .pixel, momentum: .begin)
+        #expect(MeasurementPreferences.selectedTolerance == .zero)
+        try scroll(1, units: .pixel, phase: .began)
+        #expect(MeasurementPreferences.selectedTolerance == .low)
+        try scroll(0, units: .pixel, phase: .ended)
+        try scroll(1)
         #expect(MeasurementPreferences.selectedTolerance == .medium)
         view.keyDown(with: try key())
         #expect(MeasurementPreferences.selectedTolerance == .high)
@@ -110,7 +135,7 @@ extension OverlayStartupTests {
             view.mouseUp(with: try mouse(.leftMouseUp, at: CGPoint(x: 450, y: 400)))
             let active = try #require(view.labelControls().first { $0.target == .selection })
             #expect((active.detail != nil) == (mode == .findDimensions))
-            #expect(bounds.contains(active.label.union(active.close)))
+            #expect(bounds.contains(active.group))
             #expect(view.labelControls().first { $0.target == .area(0) }?.detail == nil)
         }
     }
