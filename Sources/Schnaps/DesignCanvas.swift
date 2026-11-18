@@ -1,16 +1,17 @@
 import AppKit
+import CoreText
 import MeasurementCore
 
 @MainActor
 final class DesignCanvas: NSView {
   let display: NSScreen
   let state: DesignTools
+  private let connectedDisplays: () -> [DesignDisplay]
   var snapshot: (() -> ScreenSnapshot?)?
   var inputChanged: (() -> Void)?
   var isDragging: Bool { dragStart != nil }
   var isDraggingMarker: Bool { isDragging && floatingDrag == nil }
   private var floatingDrag: (tool: DesignTool, sample: CGPoint, label: CGRect)?
-  private var floatingLabels: [DesignTool: CGRect] = [:]
   private var dragStart: CGPoint?
   private var original: DesignMarker?
   private var originals: [DesignMarker] = []
@@ -21,10 +22,15 @@ final class DesignCanvas: NSView {
   private var controlMarkers: [DesignMarker] = []
   private var controlBounds = CGRect.null
   private var controlUnit: String?
-  private var controlFrames: [UUID: CGRect] = [:]
-  init(frame: CGRect, screen: NSScreen, state: DesignTools) {
+  private var controlLabels: [UUID: CGRect] = [:]
+  init(frame: CGRect, screen: NSScreen, state: DesignTools,
+    connectedDisplays: @escaping () -> [DesignDisplay] = {
+      NSScreen.screens.map { (DesignTools.displayID($0), $0.frame) }
+    }
+  ) {
     display = screen
     self.state = state
+    self.connectedDisplays = connectedDisplays
     super.init(frame: frame)
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -33,13 +39,12 @@ final class DesignCanvas: NSView {
   private var displayID: UInt32 { DesignTools.displayID(display) }
   var displayedMarkers: [DesignMarker] {
     guard state.visible else { return [] }
+    let displays = connectedDisplays()
     return state.markers.compactMap { marker in
       guard marker.isVisible else { return nil }
       if marker.display == displayID { return marker }
-      guard marker.tool == .ruler,
-        let source = NSScreen.screens.first(where: { DesignTools.displayID($0) == marker.display })
-      else { return nil }
-      return marker.projected(from: source.frame, to: display.frame)
+      guard let source = displays.first(where: { $0.id == marker.display }) else { return nil }
+      return marker.projection(on: (displayID, display.frame), from: source.bounds, in: bounds)
     }
   }
   func editableMarker(at point: CGPoint) -> DesignMarker? {
@@ -97,8 +102,7 @@ final class DesignCanvas: NSView {
         || (state.editing && (state.crosshair || editableMarker(at: pointer) != nil))))
   }
   private var pointer: CGPoint {
-    let p = NSEvent.mouseLocation
-    return CGPoint(x: p.x - display.frame.minX, y: display.frame.maxY - p.y)
+    display.frame.displayPoint(from: NSEvent.mouseLocation)
   }
   private func line(_ a: CGPoint, _ b: CGPoint, color: NSColor, width: CGFloat = 1) {
     color.setStroke()
@@ -108,11 +112,26 @@ final class DesignCanvas: NSView {
     path.line(to: b)
     path.stroke()
   }
-  private var captionAttributes: [NSAttributedString.Key: Any] {
-    [.font: NSFont.monospacedSystemFont(ofSize: 11, weight: .medium), .foregroundColor: NSColor.white]
+  @MainActor private struct Caption {
+    // Caption geometry is queried during event routing, outside AppKit drawing.
+    private static let attributes: [NSAttributedString.Key: Any] = [
+      NSAttributedString.Key(kCTFontAttributeName as String):
+        NSFont.monospacedSystemFont(ofSize: 11, weight: .medium) as CTFont,
+      NSAttributedString.Key(kCTForegroundColorAttributeName as String): CGColor(gray: 1, alpha: 1),
+    ]
+    let line: CTLine
+    let size: CGSize
+    let ascent: CGFloat
+    init(_ text: String) {
+      line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: Self.attributes))
+      var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
+      let width = CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
+      size = CGSize(width: width, height: ceil(ascent + descent + leading))
+      self.ascent = ascent
+    }
   }
   private func captionRect(_ text: String, at point: CGPoint, trailingSpace: CGFloat = 0) -> CGRect {
-    let size = (text as NSString).size(withAttributes: captionAttributes)
+    let size = Caption(text).size
     return CGRect(
       x: max(0, min(bounds.maxX - size.width - 12 - trailingSpace, point.x)),
       y: max(0, min(bounds.maxY - size.height - 8, point.y)),
@@ -121,9 +140,17 @@ final class DesignCanvas: NSView {
   private func drawCaption(_ text: String, in rect: CGRect) {
     NSColor.black.withAlphaComponent(0.86).setFill()
     NSBezierPath(roundedRect: rect, xRadius: 3, yRadius: 3).fill()
-    (text as NSString).draw(in: rect.insetBy(dx: 5, dy: 3), withAttributes: captionAttributes)
+    guard let context = NSGraphicsContext.current?.cgContext else { return }
+    let caption = Caption(text)
+    context.saveGState()
+    context.clip(to: rect)
+    context.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
+    context.textPosition = CGPoint(x: rect.minX + 5, y: rect.minY + 3 + caption.ascent)
+    CTLineDraw(caption.line, context)
+    context.restoreGState()
   }
   private func markerCaption(_ marker: DesignMarker) -> (String, CGPoint)? {
+    if marker.tool != .ruler, marker.display != displayID { return nil }
     if marker.tool == .guides {
       return ("\(marker.vertical ? "x" : "y") \(number(marker.vertical ? marker.x : marker.y)) pt",
         CGPoint(x: marker.vertical ? marker.x + 4 : 8, y: marker.vertical ? 8 : marker.y + 4))
@@ -139,46 +166,47 @@ final class DesignCanvas: NSView {
     return ("\(number(units)) \(pixels ? "px" : "pt") · \(number(marker.angle))° · Δ \(number(marker.end.x-marker.x)), \(number(marker.end.y-marker.y))",
       CGPoint(x: marker.x, y: marker.y + 22))
   }
-  private func controlFrame(for marker: DesignMarker, avoiding controls: [CGRect]) -> CGRect? {
+  private func controlFrame(for marker: DesignMarker, avoiding controls: [CGRect]) -> (group: CGRect, label: CGRect)? {
     guard let (text, point) = markerCaption(marker) else { return nil }
     let label = captionRect(text, at: point, trailingSpace: 28)
     let size = CGSize(width: min(bounds.width, label.width + 27), height: max(24, label.height))
+    let group: CGRect
     if marker.tool == .ruler || marker.tool == .guides {
       let origin = CGPoint(x: marker.x, y: marker.y)
       let preferred = CGRect(x: label.minX, y: label.midY - size.height / 2,
         width: size.width, height: size.height)
       let gap: CGFloat = marker.tool == .ruler ? (marker.calipers ? 74 : 22) : 8
-      return RulerCaptionPlacement.rect(preferred: preferred, origin: origin,
+      group = RulerCaptionPlacement.rect(preferred: preferred, origin: origin,
         angle: marker.tool == .ruler ? marker.angle : marker.vertical ? 90 : 0,
         bounds: bounds, avoiding: controls, gap: gap,
         positiveGap: marker.tool == .ruler && marker.square ? max(gap, marker.height + 4) : gap,
         length: marker.tool == .ruler ? marker.width : nil)
+    } else {
+      group = OverlayControlPlacement.frame(size: size, around: marker.rect, in: bounds, avoiding: controls)
     }
-    return OverlayControlPlacement.frame(size: size, around: marker.rect, in: bounds, avoiding: controls)
+    return (group, CGRect(x: group.minX, y: group.midY - label.height / 2,
+      width: max(0, group.width - 27), height: label.height))
   }
   func markerLabelRect(for marker: DesignMarker) -> CGRect? {
     let markers = displayedMarkers
     let unit = UserDefaults.standard.string(forKey: PreferenceKey.unit)
     if controlMarkers != markers || controlBounds != bounds || controlUnit != unit {
       var controls: [CGRect] = []
-      controlFrames = [:]
+      controlLabels = [:]
       for marker in markers {
-        if let rect = controlFrame(for: marker, avoiding: controls) {
-          controlFrames[marker.id] = rect
-          controls.append(rect)
+        if let frame = controlFrame(for: marker, avoiding: controls) {
+          controlLabels[marker.id] = frame.label
+          controls.append(frame.group)
         }
       }
       controlMarkers = markers
       controlBounds = bounds
       controlUnit = unit
     }
-    guard let group = controlFrames[marker.id] ?? controlFrame(for: marker, avoiding: []),
-      let (text, _) = markerCaption(marker) else { return nil }
-    let height = (text as NSString).size(withAttributes: captionAttributes).height + 6
-    return CGRect(x: group.minX, y: group.midY - height / 2,
-      width: max(0, group.width - 27), height: height)
+    return controlLabels[marker.id] ?? controlFrame(for: marker, avoiding: [])?.label
   }
   private func secondaryCaptions(for marker: DesignMarker) -> [(String, CGRect)] {
+    guard marker.display == displayID else { return [] }
     if marker.tool == .screens {
       let top = min(marker.height, marker.topInset)
       let bottom = min(marker.height - top, marker.bottomInset + marker.keyboardHeight)
@@ -539,9 +567,10 @@ final class DesignCanvas: NSView {
   }
   func floatingLabelRect(_ tool: DesignTool) -> CGRect {
     let text = floatingText(tool)
-    let size = (text as NSString).size(withAttributes: captionAttributes)
+    let size = Caption(text).size
     let labelSize = CGSize(width: size.width + 10, height: size.height + 6)
-    let origin = floatingLabels[tool]?.origin ?? CGPoint(
+    let label = state.floatingLabels[tool]
+    let origin = (label?.display == displayID ? label?.origin : nil) ?? CGPoint(
       x: bounds.maxX - labelSize.width - 16,
       y: (tool == .crosshair ? 8 : 42) + (24 - labelSize.height) / 2)
     return OverlayControlPlacement.clamped(CGRect(origin: origin, size: labelSize), in: bounds)
@@ -566,12 +595,12 @@ final class DesignCanvas: NSView {
     let point = convert(event.locationInWindow, from: nil)
     if let tool = floatingHit(at: point) {
       floatingDrag = (tool, floatingPoint(tool), floatingLabelRect(tool))
-      let global = CGPoint(x: display.frame.minX + floatingPoint(tool).x,
-        y: display.frame.maxY - floatingPoint(tool).y)
+      let global = display.frame.desktopPoint(from: floatingPoint(tool))
       if tool == .loupe { state.frozenLoupe = global } else { state.frozenCrosshair = global }
       window?.makeKey()
       window?.makeFirstResponder(self)
       dragStart = point
+      inputChanged?()
       NSCursor.closedHand.set()
       return
     }
@@ -605,17 +634,26 @@ final class DesignCanvas: NSView {
       marker.tool != .ruler && marker.tool != .guides
       && !markerLabelRects(for: marker).contains(where: { $0.contains(point) })
       && hypot(point.x - marker.rect.maxX, point.y - marker.rect.maxY) < 20
+    inputChanged?()
     NSCursor.closedHand.set()
   }
   override func mouseDragged(with event: NSEvent) {
     guard let start = dragStart else { return }
     var point = convert(event.locationInWindow, from: nil)
+    let displays = connectedDisplays()
+    let desktopPointer = display.frame.desktopPoint(from: point)
     if let drag = floatingDrag {
-      let sample = CGPoint(x: max(0, min(bounds.maxX - 1, drag.sample.x + point.x - start.x)),
-        y: max(0, min(bounds.maxY - 1, drag.sample.y + point.y - start.y)))
-      let global = CGPoint(x: display.frame.minX + sample.x, y: display.frame.maxY - sample.y)
+      let destination = displays.first { $0.bounds.contains(desktopPointer) } ?? (displayID, display.frame)
+      let dx = point.x - start.x
+      let dy = point.y - start.y
+      let sample = display.frame.desktopPoint(from: CGPoint(x: drag.sample.x + dx, y: drag.sample.y + dy))
+      let local = destination.bounds.displayPoint(from: sample)
+      let size = destination.id == displayID ? bounds.size : destination.bounds.size
+      let clipped = CGPoint(x: max(0, min(size.width - 1, local.x)), y: max(0, min(size.height - 1, local.y)))
+      let global = destination.bounds.desktopPoint(from: clipped)
+      let label = display.frame.desktopPoint(from: CGPoint(x: drag.label.minX + dx, y: drag.label.minY + dy))
+      state.floatingLabels[drag.tool] = (destination.id, destination.bounds.displayPoint(from: label))
       if drag.tool == .loupe { state.frozenLoupe = global } else { state.frozenCrosshair = global }
-      floatingLabels[drag.tool] = drag.label.offsetBy(dx: point.x - start.x, dy: point.y - start.y)
       needsDisplay = true
       return
     }
@@ -658,7 +696,8 @@ final class DesignCanvas: NSView {
         item.x += dx
         item.y += dy
         item.validate()
-        return item
+        guard let source = displays.first(where: { $0.id == item.display }) else { return item }
+        return item.reanchored(from: source.bounds, on: displays, pointer: desktopPointer)
       }
     }
   }
@@ -672,12 +711,7 @@ final class DesignCanvas: NSView {
   }
   override func mouseUp(with event: NSEvent) {
     guard isDragging else { return }
-    dragStart = nil
-    floatingDrag = nil
-    original = nil
-    originals = []
-    state.reanchorRulers()
-    state.endDragging()
+    cancelDragging()
     inputChanged?()
   }
   private func handleLoupeKey(_ event: NSEvent) -> Bool {

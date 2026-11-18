@@ -118,6 +118,7 @@ final class DesignTools: ObservableObject {
   }
   @Published var frozenCrosshair: CGPoint? { didSet { redraw?() } }
   @Published var relativeOrigin: CGPoint? { didSet { redraw?() } }
+  var floatingLabels: [DesignTool: (display: UInt32, origin: CGPoint)] = [:]
   @Published var lineWidth = 1.0 { didSet { redraw?() } }
   @Published var loupe = false {
     didSet {
@@ -456,21 +457,6 @@ final class DesignTools: ObservableObject {
     dragging = false
     persist()
   }
-  func reanchorRulers() {
-    let screens = NSScreen.screens
-    let result = markers.map { marker in
-      guard marker.tool == .ruler,
-        let source = screens.first(where: { Self.displayID($0) == marker.display })
-      else { return marker }
-      let origin = CGPoint(x: source.frame.minX + marker.x, y: source.frame.maxY - marker.y)
-      guard let target = screens.first(where: { $0.frame.contains(origin) }), target != source
-      else { return marker }
-      var moved = marker.projected(from: source.frame, to: target.frame)
-      moved.display = Self.displayID(target)
-      return moved
-    }
-    if result != markers { markers = result }
-  }
   private func persist() {
     guard !dragging else { return }
     if let data = try? JSONEncoder().encode(markers) { defaults.set(data, forKey: key) }
@@ -567,9 +553,14 @@ final class DesignToolsController {
   }
   private var ownsCursor = false
   private func updateMouseInput() {
-    var cursor: NSCursor?
+    let dragWindow = windows.first { ($0.contentView as? DesignCanvas)?.isDragging == true }
+    var cursor: NSCursor? = dragWindow == nil ? nil : .closedHand
     for window in windows {
       guard let canvas = window.contentView as? DesignCanvas else { continue }
+      if let dragWindow {
+        window.ignoresMouseEvents = window !== dragWindow
+        continue
+      }
       window.ignoresMouseEvents = !canvas.wantsMouseInput
       canvas.updateHover()
       if window.isVisible, let candidate = canvas.editingCursor { cursor = candidate }
@@ -584,6 +575,7 @@ final class DesignToolsController {
   }
   private func rebuild() {
     state.endDragging()
+    state.floatingLabels.removeAll()
     for window in windows {
       window.orderOut(nil)
       window.close()
@@ -596,10 +588,12 @@ final class DesignToolsController {
     let beganEditing = state.editing && !wasEditing
     wasEditing = state.editing
     guard state.isActive else {
-      state.endDragging()
       for window in windows {
         window.orderOut(nil)
-        (window.contentView as? DesignCanvas)?.clearVisionCache()
+        if let canvas = window.contentView as? DesignCanvas {
+          canvas.cancelDragging()
+          canvas.clearVisionCache()
+        }
       }
       updateMouseInput()
       ticker?.invalidate()
