@@ -97,7 +97,9 @@ import Testing
   tools.markers = [marker]
   tools.visible = true
   tools.editing = true
-  let canvas = DesignCanvas(frame: CGRect(origin: .zero, size: screen.frame.size), screen: screen, state: tools)
+  let canvas = DesignCanvas(frame: CGRect(origin: .zero, size: screen.frame.size), screen: screen, state: tools) {
+    [(marker.display, screen.frame)]
+  }
   let panel = DesignPanel(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
   panel.isReleasedWhenClosed = false
   panel.contentView = canvas

@@ -87,6 +87,80 @@ func everyMarkerHasVisibleGrabbableControlsAtDisplayEdges(tool: DesignTool) thro
   #expect(state.markers[1] == covering)
 }
 
+@Test(arguments: [DesignTool.ruler, .guides, .frames, .overlay, .screens], [false, true]) @MainActor
+func draggingAMarkerTransfersItsDisplayAndPersistsTheDrop(tool: DesignTool, above: Bool) throws {
+  let screen = try #require(NSScreen.main)
+  let name = "Schnaps.MarkerAcrossDisplays.Tests." + UUID().uuidString
+  let defaults = try #require(UserDefaults(suiteName: name))
+  defer { defaults.removePersistentDomain(forName: name) }
+  let state = DesignTools(defaults: defaults)
+  let source = screen.frame
+  let sourceID = DesignTools.displayID(screen)
+  let targetID = UInt32.max
+  let target = CGRect(x: above ? source.minX : source.maxX,
+    y: above ? source.maxY : source.maxY - 1000, width: 1200, height: 1000)
+  let canvas = DesignCanvas(frame: CGRect(origin: .zero, size: source.size), screen: screen, state: state) {
+    [(sourceID, source), (targetID, target)]
+  }
+  let panel = DesignPanel(contentRect: source, styleMask: [.borderless, .nonactivatingPanel],
+    backing: .buffered, defer: false)
+  panel.isReleasedWhenClosed = false
+  panel.contentView = canvas
+  defer { panel.close() }
+  var marker = DesignMarker(tool: tool, display: sourceID)
+  marker.vertical = above
+  state.markers = [marker]
+  state.visible = true
+  state.editing = true
+  let saved = defaults.data(forKey: "designMarkers.v1")
+  let label = try #require(canvas.markerLabelRect(for: marker))
+  let start = CGPoint(x: label.midX, y: label.midY)
+  let targetOrigin = source.displayPoint(from: target.desktopPoint(from: CGPoint(x: 80, y: 120)))
+  let drop = CGPoint(x: start.x + targetOrigin.x - marker.x, y: start.y + targetOrigin.y - marker.y)
+
+  canvas.mouseDown(with: try mouse(.leftMouseDown, at: start, in: canvas))
+  #expect(canvas.isDragging)
+  canvas.mouseDragged(with: try mouse(.leftMouseDragged, at: drop, in: canvas))
+  let moved = try #require(state.selected)
+  #expect(moved.id == marker.id)
+  #expect(moved.display == targetID)
+  #expect(abs(moved.x - 80) < 0.001)
+  #expect(abs(moved.y - 120) < 0.001)
+  #expect(moved.width == marker.width && moved.height == marker.height)
+  #expect(defaults.data(forKey: "designMarkers.v1") == saved)
+  canvas.mouseUp(with: try mouse(.leftMouseUp, at: drop, in: canvas))
+  #expect(!canvas.isDragging)
+  let persisted = try #require(defaults.data(forKey: "designMarkers.v1"))
+  #expect(try JSONDecoder().decode([DesignMarker].self, from: persisted) == [moved])
+}
+
+@Test(arguments: [DesignTool.frames, .overlay, .screens]) @MainActor
+func aMarkerAcrossTheSeamDrawsOnBothDisplaysWithOneLabel(tool: DesignTool) throws {
+  let screen = try #require(NSScreen.main)
+  let name = "Schnaps.MarkerSeam.Tests." + UUID().uuidString
+  let defaults = try #require(UserDefaults(suiteName: name))
+  defer { defaults.removePersistentDomain(forName: name) }
+  let state = DesignTools(defaults: defaults)
+  let source = screen.frame
+  let sourceID = DesignTools.displayID(screen)
+  let targetID = UInt32.max
+  let target = source.offsetBy(dx: source.width, dy: 0)
+  let canvas = DesignCanvas(frame: CGRect(origin: .zero, size: source.size), screen: screen, state: state) {
+    [(sourceID, source), (targetID, target)]
+  }
+  var marker = DesignMarker(tool: tool, display: targetID)
+  marker.x = -40
+  state.markers = [marker]
+  state.visible = true
+  state.editing = true
+
+  let projection = try #require(canvas.displayedMarkers.first)
+  #expect(projection.rect.minX == source.width - 40)
+  #expect(canvas.markerLabelRect(for: projection) == nil)
+  #expect(canvas.removeButtonRect(for: projection) == nil)
+  #expect(canvas.editableMarker(at: CGPoint(x: source.width - 20, y: marker.y + 50))?.id == marker.id)
+}
+
 @Test(arguments: [DesignTool.loupe, .crosshair], [false, true]) @MainActor
 func floatingToolLabelsDragWithoutCloseControls(tool: DesignTool, editing: Bool) throws {
   let screen = try #require(NSScreen.main)
@@ -132,6 +206,50 @@ func floatingToolLabelsDragWithoutCloseControls(tool: DesignTool, editing: Bool)
   #expect(canvas.cursor(at: besideLabel) == nil)
   #expect(tool == .loupe ? state.loupe : state.crosshair)
   #expect(!canvas.isDragging)
+}
+
+@Test(arguments: [DesignTool.loupe, .crosshair]) @MainActor
+func draggingAPinnedCursorToolTransfersItsSampleAndLabel(tool: DesignTool) throws {
+  let screen = try #require(NSScreen.main)
+  let name = "Schnaps.CursorToolAcrossDisplays.Tests." + UUID().uuidString
+  let defaults = try #require(UserDefaults(suiteName: name))
+  defer { defaults.removePersistentDomain(forName: name) }
+  let state = DesignTools(defaults: defaults)
+  let source = screen.frame
+  let sourceID = DesignTools.displayID(screen)
+  let targetID = UInt32.max
+  let target = source.offsetBy(dx: -source.width, dy: 0)
+  let canvas = DesignCanvas(frame: CGRect(origin: .zero, size: source.size), screen: screen, state: state) {
+    [(sourceID, source), (targetID, target)]
+  }
+  let panel = DesignPanel(contentRect: source, styleMask: [.borderless, .nonactivatingPanel],
+    backing: .buffered, defer: false)
+  panel.isReleasedWhenClosed = false
+  panel.contentView = canvas
+  defer { panel.close() }
+  let sample = source.desktopPoint(from: CGPoint(x: 200, y: 200))
+  if tool == .loupe {
+    state.loupe = true
+    state.frozenLoupe = sample
+  } else {
+    state.crosshair = true
+    state.frozenCrosshair = sample
+  }
+  let label = canvas.floatingLabelRect(tool)
+  let start = CGPoint(x: label.midX, y: label.midY)
+  let drop = CGPoint(x: start.x - source.width, y: start.y + 30)
+  canvas.mouseDown(with: try mouse(.leftMouseDown, at: start, in: canvas))
+  canvas.mouseDragged(with: try mouse(.leftMouseDragged, at: drop, in: canvas))
+  canvas.mouseUp(with: try mouse(.leftMouseUp, at: drop, in: canvas))
+
+  let moved = try #require(tool == .loupe ? state.frozenLoupe : state.frozenCrosshair)
+  #expect(target.contains(moved))
+  #expect(abs(moved.x - sample.x + source.width) < 0.001)
+  #expect(abs(moved.y - sample.y + 30) < 0.001)
+  let movedLabel = try #require(state.floatingLabels[tool])
+  #expect(movedLabel.display == targetID)
+  #expect(abs(movedLabel.origin.x - label.minX) < 0.001)
+  #expect(abs(movedLabel.origin.y - label.minY - 30) < 0.001)
 }
 
 @Test(arguments: [false, true]) @MainActor
