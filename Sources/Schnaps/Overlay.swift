@@ -772,7 +772,9 @@ final class MeasurementView: NSView {
             FindDimensionsLabel.text(for: $0.rect, presentation: presentation, scale: scale)
         }
         var accessibility = description.map { $0 + (showsSnapIndicator ? ", " + L("Snap") : "") } ?? "No active measurement"
-        if mode == .findDimensions { accessibility += ", " + toleranceTitle }
+        if selection == nil, heldDimensions == nil, liveDimensions != nil {
+            accessibility += ", " + toleranceTitle
+        }
         setAccessibilityValue(accessibility)
         if let frozenImage, UserDefaults.standard.bool(forKey: PreferenceKey.freezeScreen) {
             frozenImage.draw(in: bounds, from: .zero,
@@ -830,13 +832,9 @@ final class MeasurementView: NSView {
         L("Tolerance") + ": " + L(MeasurementPreferences.selectedTolerance.title) + " (\(tolerance))"
     }
     private func toleranceDetail(for target: ControlTarget) -> String? {
-        guard mode == .findDimensions else { return nil }
-        switch target {
-        case .selection, .held, .live:
-            let preset = MeasurementPreferences.selectedTolerance
-            return L(preset == .medium ? "Med" : preset.title)
-        default: return nil
-        }
+        guard target == .live else { return nil }
+        let preset = MeasurementPreferences.selectedTolerance
+        return L(preset == .medium ? "Med" : preset.title)
     }
     private var detailAttributes: [NSAttributedString.Key: Any] {
         [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor]
