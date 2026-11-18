@@ -53,14 +53,14 @@ export function createWorker(fetcher = fetch) {
     if (artifact) headers.set('content-disposition', `attachment; filename="${artifact[2]}"`);
     const response = new Response(request.method === 'HEAD' ? null : upstream.body, { status: upstream.status, headers });
     const updater = updaterMetadata(request);
-    if (updater.runtime === 'debug' || excludesAnalytics(request)) return response;
-    if (feed && updater.isUpdater && request.method === 'GET' && [200, 304].includes(response.status)) {
-      backgroundEvent({ kind: 'check', eventID: crypto.randomUUID(), runtime: updater.runtime, version: updater.version }, env, ctx);
+    if (updater.runtime === 'debug' || excludesAnalytics(request, env)) return response;
+    if (feed && !isPrefetch(request) && updater.isUpdater && request.method === 'GET' && [200, 304].includes(response.status)) {
+      backgroundEvent({ kind: 'check', eventID: crypto.randomUUID(), runtime: updater.runtime, version: updater.version }, env, ctx, request);
     } else if (artifact && startsTransfer(request, response)) {
       let website = ['hero', 'footer', 'website'].includes(url.searchParams.get('source'));
       try { website ||= new URL(request.headers.get('referer') ?? '').origin === 'https://getschnaps.com'; } catch { /* unattributed */ }
       backgroundEvent({ kind: 'transfer', eventID: crypto.randomUUID(), runtime: updater.runtime, version: artifact[3], artifact: artifact[4],
-        source: updater.isUpdater || artifact[4] === 'delta' ? 'updater' : website ? 'website' : 'direct' }, env, ctx);
+        source: updater.isUpdater || artifact[4] === 'delta' ? 'updater' : website ? 'website' : 'direct' }, env, ctx, request);
     }
     return response;
   } };

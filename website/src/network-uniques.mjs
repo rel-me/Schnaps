@@ -1,0 +1,16 @@
+// Server-only pseudonyms: no installation ID, cookie ID, or raw IP is persisted.
+export async function networkToken(request, env, appID, now = new Date()) {
+  const ip = request.headers.get("cf-connecting-ip");
+  if (!env.ANALYTICS_UNIQUES_KEY || !ip) return null;
+  const day = now.toISOString().slice(0, 10);
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(env.ANALYTICS_UNIQUES_KEY),
+    { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const bytes = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(JSON.stringify([appID, day, ip])));
+  return { day, token: Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2, "0")).join("") };
+}
+export function excludedRequest(request, env = {}) {
+  const ip = request.headers.get("cf-connecting-ip");
+  return request.headers.get("x-analytics-excluded") === "1" ||
+    (request.headers.get("cookie") ?? "").split(";").some(part => part.trim() === "__Host-analytics_excluded=1") ||
+    (!!ip && (env.ANALYTICS_EXCLUDED_IPS ?? "").split(",").map(value => value.trim()).includes(ip));
+}

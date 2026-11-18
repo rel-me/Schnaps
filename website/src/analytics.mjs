@@ -1,9 +1,9 @@
+import { networkToken, excludedRequest } from "./network-uniques.mjs";
 export const versionPattern = /^\d+\.\d+\.\d+(?:-beta\.[1-9]\d*)?$/;
 function deliveryFailure(code) { const error = new Error('Analytics delivery failed'); error.analyticsCode = code; return error; }
 function failureCode(error) { return /^(missing-key|missing-service|http-[0-9]{3})$/.test(error?.analyticsCode ?? '') ? error.analyticsCode : 'transport'; }
-export function excludesAnalytics(request) {
-  return request.headers.get('x-analytics-excluded') === '1' ||
-    (request.headers.get('cookie') ?? '').split(';').some(part => part.trim() === '__Host-analytics_excluded=1');
+export function excludesAnalytics(request, env = {}) {
+  return excludedRequest(request, env);
 }
 export function browserExclusion(request) {
   const headers = { 'cache-control': 'no-store', 'content-type': 'text/html; charset=utf-8',
@@ -25,8 +25,13 @@ export async function sendEvent(event, env) {
   });
   if (response.status !== 204) throw deliveryFailure(`http-${response.status}`);
 }
-export function backgroundEvent(event, env, ctx) {
-  ctx.waitUntil(sendEvent(event, env).catch(error => console.error('Schnaps analytics delivery failed', failureCode(error))));
+export function backgroundEvent(event, env, ctx, request) {
+  ctx.waitUntil((async () => {
+    let network;
+    try { network = await networkToken(request, env, 'com.gabrielhandford.Schnap'); }
+    catch { console.error('Daily network counting unavailable'); }
+    await sendEvent({ ...event, ...(network ? { network } : {}) }, env);
+  })().catch(error => console.error('Schnaps analytics delivery failed', failureCode(error))));
 }
 export function updaterMetadata(request) {
   const agent = request.headers.get('user-agent') ?? '';
@@ -34,5 +39,5 @@ export function updaterMetadata(request) {
   const explicit = request.headers.get('x-schnaps-client') === 'macos-updater';
   const version = explicit ? request.headers.get('x-schnaps-app-version') : legacy?.[1];
   return { isUpdater: explicit || !!legacy, version: versionPattern.test(version ?? '') ? version : 'unknown',
-    runtime: (explicit ? request.headers.get('x-schnaps-runtime') === 'debug' : /Debug/.test(legacy?.[0] ?? '')) ? 'debug' : 'release' };
+    runtime: (request.headers.get('x-schnaps-runtime') === 'debug' || /^Schnaps?Debug/.test(agent)) ? 'debug' : 'release' };
 }

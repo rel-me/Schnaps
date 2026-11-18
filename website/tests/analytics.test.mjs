@@ -104,3 +104,20 @@ test('retired launch endpoint never forwards identity or launch events', async (
   assert.deepEqual(f.events, []);
   assert.deepEqual(f.calls, []);
 });
+
+test('daily network tokens stay server-side and Debug or excluded requests never forward them', async () => {
+  const f = fixture(); f.env.ANALYTICS_UNIQUES_KEY = 'test-only-secret';
+  const headers = { 'user-agent': 'Schnaps/0.7.8 Sparkle/2', 'cf-connecting-ip': '192.0.2.1' };
+  await f.request('/appcast.xml', { headers });
+  await f.request('/appcast.xml', { headers });
+  assert.match(f.events[0].network.token, /^[a-f0-9]{64}$/);
+  assert.deepEqual(f.events[0].network, f.events[1].network);
+  assert.ok(!JSON.stringify(f.events).includes('192.0.2.1'));
+  f.env.ANALYTICS_EXCLUDED_IPS = '192.0.2.99';
+  for (const extra of [{ 'x-analytics-excluded': '1' }, { cookie: '__Host-analytics_excluded=1' },
+    { 'x-schnaps-runtime': 'debug' }, { 'user-agent': 'SchnapsDebug/0.7.8 Sparkle/2', 'x-schnaps-client': 'macos-updater', 'x-schnaps-runtime': 'release' },
+    { 'cf-connecting-ip': '192.0.2.99' }, { purpose: 'prefetch' }]) {
+    await f.request('/appcast.xml', { headers: { ...headers, ...extra } });
+  }
+  assert.equal(f.events.length, 2);
+});
