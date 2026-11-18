@@ -101,6 +101,8 @@ extension OverlayStartupTests {
         view.mouseDown(with: try mouse(.leftMouseDown, at: point))
         view.mouseUp(with: try mouse(.leftMouseUp, at: point))
         let held = try #require(view.labelControls().first { $0.target == .held })
+        #expect(held.text == live.text)
+        #expect(held.detail == nil)
         let start = CGPoint(x: held.label.midX, y: held.label.midY)
         let end = CGPoint(x: start.x + 10, y: start.y + 20)
         view.mouseDown(with: try mouse(.leftMouseDown, at: start))
@@ -109,18 +111,22 @@ extension OverlayStartupTests {
         let heldY = try #require(view.heldDimensions?.horizontal.start.y)
         view.keyDown(with: try key())
         #expect(view.heldDimensions?.horizontal.start.y == heldY)
-        #expect(view.labelControls().first { $0.target == .held }?.detail == L("High"))
+        let updatedHeld = try #require(view.labelControls().first { $0.target == .held })
+        #expect(updatedHeld.detail == nil)
         defaults.set(false, forKey: PreferenceKey.scrollTolerance)
         view.synchronizePreferences()
         try scroll(-1)
         #expect(MeasurementPreferences.selectedTolerance == .high)
-        #expect(view.labelControls().first { $0.target == .held }?.detail == L("High"))
         // Keyboard controls remain available when scroll adjustment is disabled.
         view.keyDown(with: try key(true))
         #expect(MeasurementPreferences.selectedTolerance == .medium)
+
+        view.rightMouseDown(with: try mouse(.rightMouseDown, at: point))
+        view.rightMouseUp(with: try mouse(.rightMouseUp, at: point))
+        #expect(view.labelControls().first { $0.target == .live }?.detail == L("Med"))
     }
 
-    @Test @MainActor func toleranceDetailOnlyAppearsOnActiveFindDimensionsMeasurements() throws {
+    @Test @MainActor func areaMeasurementsOmitToleranceDetail() throws {
         let bounds = CGRect(x: 0, y: 0, width: 800, height: 600)
         for mode in [MeasurementMode.area, .findDimensions] {
             let view = MeasurementView(frame: bounds, scale: 1, snapshot: nil, mode: mode)
@@ -134,7 +140,7 @@ extension OverlayStartupTests {
             view.mouseDragged(with: try mouse(.leftMouseDragged, at: CGPoint(x: 450, y: 400)))
             view.mouseUp(with: try mouse(.leftMouseUp, at: CGPoint(x: 450, y: 400)))
             let active = try #require(view.labelControls().first { $0.target == .selection })
-            #expect((active.detail != nil) == (mode == .findDimensions))
+            #expect(active.detail == nil)
             #expect(bounds.contains(active.group))
             #expect(view.labelControls().first { $0.target == .area(0) }?.detail == nil)
         }
