@@ -136,10 +136,10 @@ final class DesignCanvas: NSView {
       self.ascent = ascent
     }
   }
-  private func captionRect(_ text: String, at point: CGPoint, trailingSpace: CGFloat = 0) -> CGRect {
+  private func captionRect(_ text: String, at point: CGPoint) -> CGRect {
     let size = Caption(text).size
     return CGRect(
-      x: max(0, min(bounds.maxX - size.width - 12 - trailingSpace, point.x)),
+      x: max(0, min(bounds.maxX - size.width - 12, point.x)),
       y: max(0, min(bounds.maxY - size.height - 8, point.y)),
       width: min(bounds.width, size.width + 10), height: size.height + 6)
   }
@@ -174,8 +174,9 @@ final class DesignCanvas: NSView {
   }
   private func controlFrame(for marker: DesignMarker, avoiding controls: [CGRect]) -> (group: CGRect, label: CGRect)? {
     guard let (text, point) = markerCaption(marker) else { return nil }
-    let label = captionRect(text, at: point, trailingSpace: 28)
-    let size = CGSize(width: min(bounds.width, label.width + 27), height: max(24, label.height))
+    let label = captionRect(text, at: point)
+    let closeWidth = label.height + OverlayCloseButton.spacing
+    let size = CGSize(width: min(bounds.width, label.width + closeWidth), height: label.height)
     let group: CGRect
     if marker.tool == .ruler || marker.tool == .guides {
       let origin = CGPoint(x: marker.x, y: marker.y)
@@ -190,8 +191,8 @@ final class DesignCanvas: NSView {
     } else {
       group = OverlayControlPlacement.frame(size: size, around: marker.rect, in: bounds, avoiding: controls)
     }
-    return (group, CGRect(x: group.minX, y: group.midY - label.height / 2,
-      width: max(0, group.width - 27), height: label.height))
+    return (group, CGRect(x: group.minX, y: group.minY,
+      width: max(0, group.width - closeWidth), height: label.height))
   }
   func markerLabelRect(for marker: DesignMarker) -> CGRect? {
     let markers = displayedMarkers
@@ -239,21 +240,14 @@ final class DesignCanvas: NSView {
   }
   func removeButtonRect(for marker: DesignMarker) -> CGRect? {
     guard state.editing, !marker.locked, let label = markerLabelRect(for: marker) else { return nil }
-    return CGRect(x: label.maxX + 3, y: max(0, min(bounds.maxY - 24, label.midY - 12)), width: 24, height: 24)
+    return OverlayCloseButton.frame(beside: label)
   }
   private func drawMarkerCaption(_ marker: DesignMarker) {
     guard let (text, _) = markerCaption(marker), let label = markerLabelRect(for: marker) else { return }
     drawCaption(text, in: label)
     guard let button = removeButtonRect(for: marker) else { return }
-    drawCloseButton(in: button)
-  }
-  private func drawCloseButton(in button: CGRect) {
-    NSColor.black.withAlphaComponent(0.9).setFill()
-    NSBezierPath(roundedRect: button, xRadius: 5, yRadius: 5).fill()
-    line(CGPoint(x: button.minX + 8, y: button.minY + 8),
-      CGPoint(x: button.maxX - 8, y: button.maxY - 8), color: .white, width: 2)
-    line(CGPoint(x: button.maxX - 8, y: button.minY + 8),
-      CGPoint(x: button.minX + 8, y: button.maxY - 8), color: .white, width: 2)
+    OverlayCloseButton.draw(in: button, background: .black.withAlphaComponent(0.86),
+      foreground: .white, cornerRadius: 3)
   }
   private func number(_ value: Double) -> String { String(format: "%.1f", value) }
   private func drawImage(_ image: NSImage, in rect: CGRect, opacity: Double = 1) {

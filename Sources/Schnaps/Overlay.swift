@@ -248,10 +248,11 @@ final class MeasurementView: NSView {
     private var dragging = false
     private var controlDrag: (target: ControlTarget, spans: [DimensionSpan], position: CGFloat)?
     private var consumedClick = false
+    private static let labelHeight: CGFloat = 28
     enum ControlTarget: Equatable {
         case selection, area(Int), distances(Int, Int), held, live, guide(Int)
 
-        var closeWidth: CGFloat { self == .live || self == .held ? 0 : 27 }
+        var showsCloseButton: Bool { self != .live && self != .held }
     }
     struct LabelControl {
         let target: ControlTarget
@@ -809,12 +810,8 @@ final class MeasurementView: NSView {
         for control in labelControls() {
             drawPill(control.text, in: control.label, detail: control.detail)
             if let close = control.close {
-                NSColor.windowBackgroundColor.setFill()
-                NSBezierPath(roundedRect: close, xRadius: 4, yRadius: 4).fill()
-                line(from: CGPoint(x: close.minX + 8, y: close.minY + 8),
-                     to: CGPoint(x: close.maxX - 8, y: close.maxY - 8), color: .labelColor, dashed: false)
-                line(from: CGPoint(x: close.maxX - 8, y: close.minY + 8),
-                     to: CGPoint(x: close.minX + 8, y: close.maxY - 8), color: .labelColor, dashed: false)
+                OverlayCloseButton.draw(in: close, background: .windowBackgroundColor,
+                    foreground: .labelColor, cornerRadius: 0)
             }
             if control.target == .selection && showsSnapIndicator {
                 drawSnapIcon(in: CGRect(x: control.label.midX - 8, y: control.label.maxY + 4, width: 16, height: 16))
@@ -846,22 +843,26 @@ final class MeasurementView: NSView {
 
     func labelControls() -> [LabelControl] {
         var controls: [LabelControl] = []
+        let closeWidth = Self.labelHeight + OverlayCloseButton.spacing
         func append(_ target: ControlTarget, text: String, group: CGRect) {
             let detail = toleranceDetail(for: target)
-            let label = CGRect(x: group.minX, y: group.minY, width: max(0, group.width - target.closeWidth), height: 28)
-            let close = target.closeWidth == 0 ? nil : CGRect(x: label.maxX + 3, y: label.minY + 2, width: 24, height: 24)
+            let reservedWidth = target.showsCloseButton ? closeWidth : 0
+            let label = CGRect(x: group.minX, y: group.minY,
+                width: max(0, group.width - reservedWidth), height: Self.labelHeight)
+            let close = target.showsCloseButton ? OverlayCloseButton.frame(beside: label) : nil
             controls.append(LabelControl(target: target, text: text, detail: detail, label: label, close: close, group: group))
         }
-        func size(_ text: String, height: CGFloat = 28, target: ControlTarget? = nil) -> CGSize {
-            let detail = target.flatMap { toleranceDetail(for: $0) }
+        func size(_ text: String, target: ControlTarget, extraHeight: CGFloat = 0) -> CGSize {
+            let detail = toleranceDetail(for: target)
             let textWidth = (text as NSString).size(withAttributes: textAttributes).width
             let badgeWidth = detail.map { toleranceBadgeWidth($0) + 12 } ?? 0
-            return CGSize(width: textWidth + badgeWidth + 22 + (target?.closeWidth ?? 27), height: height)
+            return CGSize(width: textWidth + badgeWidth + 22 + (target.showsCloseButton ? closeWidth : 0),
+                height: Self.labelHeight + extraHeight)
         }
         func area(_ rect: CGRect, target: ControlTarget, prefix: String = "") {
             let text = prefix + areaLabelText(rect)
             let group = AreaMeasurementLabel.frame(for: rect,
-                size: size(text, height: target == .selection && showsSnapIndicator ? 48 : 28, target: target),
+                size: size(text, target: target, extraHeight: target == .selection && showsSnapIndicator ? 20 : 0),
                 in: bounds, avoiding: controls.map(\.group))
             append(target, text: text, group: group)
         }
@@ -882,21 +883,23 @@ final class MeasurementView: NSView {
                 index += 2
             } else {
                 let text = presentation.distance(span.length, scale: scale, horizontal: span.isHorizontal)
-                append(.distances(index, 1), text: text, group: DimensionLabelPlacement.frame(for: span,
-                    size: size(text), in: bounds, avoiding: controls.map(\.group)))
+                let target = ControlTarget.distances(index, 1)
+                append(target, text: text, group: DimensionLabelPlacement.frame(for: span,
+                    size: size(text, target: target), in: bounds, avoiding: controls.map(\.group)))
                 index += 1
             }
         }
         if let value = heldDimensions ?? liveDimensions { dimensions(value, target: heldDimensions == nil ? .live : .held) }
         for (index, guide) in guides.enumerated() {
+            let target = ControlTarget.guide(index)
             let text = "\(guide.vertical ? "x" : "y") \(presentation.value(guide.position, scale: scale))"
             let preferred = CGRect(x: guide.vertical ? guide.position + 10 : 8,
-                y: guide.vertical ? 8 : guide.position + 10, width: size(text).width, height: 28)
+                y: guide.vertical ? 8 : guide.position + 10, width: size(text, target: target).width, height: Self.labelHeight)
             let group = RulerCaptionPlacement.rect(preferred: preferred,
                 origin: guide.vertical ? CGPoint(x: guide.position, y: 0) : CGPoint(x: 0, y: guide.position),
                 angle: guide.vertical ? 90 : 0, bounds: bounds.insetBy(dx: 8, dy: 8),
                 avoiding: controls.map(\.group), gap: 8)
-            append(.guide(index), text: text, group: group)
+            append(target, text: text, group: group)
         }
         return controls
     }
