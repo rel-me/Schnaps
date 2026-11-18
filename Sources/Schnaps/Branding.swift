@@ -11,17 +11,25 @@ enum AppBranding {
     private static var appearanceObservation: NSKeyValueObservation?
 
     static func installIcon() {
-        // Use the transparent brand mark wherever we control the icon, including
-        // the running Dock icon on macOS 26. System-owned surfaces may add chrome.
-        updateDockIcon()
+        updateApplicationIcon()
         appearanceObservation = NSApp.observe(\.effectiveAppearance, options: [.new]) { _, _ in
-            Task { @MainActor in updateDockIcon() }
+            Task { @MainActor in updateApplicationIcon() }
         }
     }
 
-    private static func updateDockIcon() {
+    private static func updateApplicationIcon() {
         let dark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-        guard let dockIcon = icon(dark: dark) else { return }
-        NSApp.applicationIconImage = dockIcon
+        guard let mark = icon(dark: dark) else { return }
+        NSApp.applicationIconImage = mark
+        registerApplicationImage(mark)
+    }
+
+    static func registerApplicationImage(_ image: NSImage) {
+        // Sparkle 2.10's dialogs resolve the named application image in this process.
+        if let cached = NSImage(named: NSImage.applicationIconName) {
+            guard cached !== image else { return }
+            _ = cached.setName(nil)
+        }
+        _ = image.setName(NSImage.applicationIconName)
     }
 }
