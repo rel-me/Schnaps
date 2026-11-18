@@ -59,7 +59,7 @@ final class DesignCanvas: NSView {
   }
   func cursor(at point: CGPoint) -> NSCursor? {
     if isDragging { return .closedHand }
-    if let hit = floatingHit(at: point) { return hit.close ? .pointingHand : .openHand }
+    if floatingHit(at: point) != nil { return .openHand }
     guard state.editing else { return nil }
     guard let marker = editableMarker(at: point) else { return nil }
     if removeButtonRect(for: marker)?.contains(point) == true { return .pointingHand }
@@ -267,7 +267,6 @@ final class DesignCanvas: NSView {
     }
     for tool in [DesignTool.crosshair, .loupe] where floatingEnabled(tool) {
       drawCaption(floatingText(tool), in: floatingLabelRect(tool))
-      drawCloseButton(in: floatingCloseRect(tool))
     }
   }
   private func draw(_ marker: DesignMarker, frame: ScreenSnapshot?) {
@@ -541,47 +540,35 @@ final class DesignCanvas: NSView {
   func floatingLabelRect(_ tool: DesignTool) -> CGRect {
     let text = floatingText(tool)
     let size = (text as NSString).size(withAttributes: captionAttributes)
-    let origin = floatingLabels[tool].map { CGPoint(x: $0.minX, y: $0.midY - 12) } ?? CGPoint(
-      x: bounds.maxX - size.width - 53, y: tool == .crosshair ? 8 : 42)
-    let group = OverlayControlPlacement.clamped(
-      CGRect(origin: origin, size: CGSize(width: size.width + 37, height: 24)), in: bounds)
-    return CGRect(x: group.minX, y: group.midY - (size.height + 6) / 2,
-      width: group.width - 27, height: size.height + 6)
+    let labelSize = CGSize(width: size.width + 10, height: size.height + 6)
+    let origin = floatingLabels[tool]?.origin ?? CGPoint(
+      x: bounds.maxX - labelSize.width - 16,
+      y: (tool == .crosshair ? 8 : 42) + (24 - labelSize.height) / 2)
+    return OverlayControlPlacement.clamped(CGRect(origin: origin, size: labelSize), in: bounds)
   }
-  func floatingCloseRect(_ tool: DesignTool) -> CGRect {
-    let label = floatingLabelRect(tool)
-    return CGRect(x: label.maxX + 3, y: label.midY - 12, width: 24, height: 24)
-  }
-  private func floatingHit(at point: CGPoint) -> (tool: DesignTool, close: Bool)? {
+  private func floatingHit(at point: CGPoint) -> DesignTool? {
     for tool in [DesignTool.loupe, .crosshair] where floatingEnabled(tool) {
-      if floatingCloseRect(tool).contains(point) { return (tool, true) }
-      if floatingLabelRect(tool).contains(point) { return (tool, false) }
+      if floatingLabelRect(tool).contains(point) { return tool }
     }
     // Keep normal tool use click-through except for the explicit label controls.
     guard state.editing else { return nil }
     // Pointer-following visuals cannot be chased; their stable labels are always grabbable.
     if floatingEnabled(.loupe), state.frozenLoupe != nil, loupeRect(at: floatingPoint(.loupe)).contains(point) {
-      return (.loupe, false)
+      return .loupe
     }
     if floatingEnabled(.crosshair), state.frozenCrosshair != nil {
       let anchor = floatingPoint(.crosshair)
-      if abs(anchor.x - point.x) < 8 || abs(anchor.y - point.y) < 8 { return (.crosshair, false) }
+      if abs(anchor.x - point.x) < 8 || abs(anchor.y - point.y) < 8 { return .crosshair }
     }
     return nil
   }
   override func mouseDown(with event: NSEvent) {
     let point = convert(event.locationInWindow, from: nil)
-    if let hit = floatingHit(at: point) {
-      if hit.close {
-        if hit.tool == .loupe { state.loupe = false } else { state.crosshair = false }
-        floatingLabels[hit.tool] = nil
-        inputChanged?()
-        return
-      }
-      floatingDrag = (hit.tool, floatingPoint(hit.tool), floatingLabelRect(hit.tool))
-      let global = CGPoint(x: display.frame.minX + floatingPoint(hit.tool).x,
-        y: display.frame.maxY - floatingPoint(hit.tool).y)
-      if hit.tool == .loupe { state.frozenLoupe = global } else { state.frozenCrosshair = global }
+    if let tool = floatingHit(at: point) {
+      floatingDrag = (tool, floatingPoint(tool), floatingLabelRect(tool))
+      let global = CGPoint(x: display.frame.minX + floatingPoint(tool).x,
+        y: display.frame.maxY - floatingPoint(tool).y)
+      if tool == .loupe { state.frozenLoupe = global } else { state.frozenCrosshair = global }
       window?.makeKey()
       window?.makeFirstResponder(self)
       dragStart = point

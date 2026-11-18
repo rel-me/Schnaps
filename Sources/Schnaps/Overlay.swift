@@ -237,7 +237,7 @@ final class MeasurementView: NSView {
     var captureSnapshot: ScreenSnapshot? { snapshot }
     private(set) var selection: CGRect?
     private var detectionRegion: CGRect?
-    private var scrollRemainder: CGFloat = 0
+    private var scrollRemainder: CGFloat?
     private var liveDimensions: Dimensions?
     private(set) var heldDimensions: Dimensions?
     private var modifierFlags: NSEvent.ModifierFlags = []
@@ -250,13 +250,15 @@ final class MeasurementView: NSView {
     private var consumedClick = false
     enum ControlTarget: Equatable {
         case selection, area(Int), distances(Int, Int), held, live, guide(Int)
+
+        var closeWidth: CGFloat { self == .live || self == .held ? 0 : 27 }
     }
     struct LabelControl {
         let target: ControlTarget
         let text: String
         let detail: String?
         let label: CGRect
-        let close: CGRect
+        let close: CGRect?
         let group: CGRect
     }
     private enum DragMode { case create, move, resize(CGPoint) }
@@ -313,7 +315,7 @@ final class MeasurementView: NSView {
         addCursorRect(bounds,cursor:UserDefaults.standard.bool(forKey:PreferenceKey.showCursor) ? .crosshair : hidden)
         for control in labelControls() {
             addCursorRect(control.label, cursor: .openHand)
-            addCursorRect(control.close, cursor: .pointingHand)
+            if let close = control.close { addCursorRect(close, cursor: .pointingHand) }
         }
     }
     func updateSnapshot(_ value: ScreenSnapshot?) {
@@ -401,7 +403,7 @@ final class MeasurementView: NSView {
         controlDrag = nil
         consumedClick = false
         let controls = labelControls()
-        if let control = controls.reversed().first(where: { $0.close.contains(anchor) }) {
+        if let control = controls.reversed().first(where: { $0.close?.contains(anchor) == true }) {
             removeControl(control.target)
             consumedClick = true
             needsDisplay = true
@@ -610,7 +612,7 @@ final class MeasurementView: NSView {
     private func toggleMode() {
         areaDetection.cancel()
         detectionRegion = nil
-        scrollRemainder = 0
+        scrollRemainder = nil
         mode = mode == .area ? .findDimensions : .area
         onModeChanged?(mode)
         liveDimensions = nil
@@ -652,15 +654,28 @@ final class MeasurementView: NSView {
         guard mode == .findDimensions, snapshot != nil, !dragging,
               UserDefaults.standard.bool(forKey: PreferenceKey.scrollTolerance),
               event.momentumPhase.isEmpty else { return }
+        let phase = event.phase
+        if phase != .changed { scrollRemainder = nil }
+        guard phase != .ended, phase != .cancelled else { return }
+
         let delta = event.scrollingDeltaY
-        guard abs(delta) > abs(event.scrollingDeltaX), delta != 0 else { return }
-        if event.phase == .began { scrollRemainder = 0 }
-        // Trackpads send many tiny events; a mouse wheel advances once per notch.
-        scrollRemainder += event.hasPreciseScrollingDeltas ? delta / 10 : delta
-        let steps = Int(scrollRemainder)
-        guard steps != 0 else { return }
-        scrollRemainder -= CGFloat(steps)
-        let preset = MeasurementPreferences.selectedTolerance.stepped(by: steps)
+        guard abs(delta) > abs(event.scrollingDeltaX) else { return }
+        var movement = delta
+        if event.hasPreciseScrollingDeltas, !phase.isEmpty {
+            // Step immediately for the first movement, then require a deliberate swipe to step again.
+            if let remainder = scrollRemainder {
+                movement += remainder
+                if abs(movement) < 40 {
+                    scrollRemainder = movement
+                    return
+                }
+            }
+            scrollRemainder = 0
+        }
+        // Wheel deltas can be accelerated. One event advances at most one preset.
+        let current = MeasurementPreferences.selectedTolerance
+        let preset = current.stepped(by: movement < 0 ? -1 : 1)
+        guard preset != current else { return }
         MeasurementPreferences.selectTolerance(preset)
         synchronizePreferences()
     }
@@ -791,12 +806,14 @@ final class MeasurementView: NSView {
         }
         for control in labelControls() {
             drawPill(control.text, in: control.label, detail: control.detail)
-            NSColor.windowBackgroundColor.setFill()
-            NSBezierPath(roundedRect: control.close, xRadius: 4, yRadius: 4).fill()
-            line(from: CGPoint(x: control.close.minX + 8, y: control.close.minY + 8),
-                 to: CGPoint(x: control.close.maxX - 8, y: control.close.maxY - 8), color: .labelColor, dashed: false)
-            line(from: CGPoint(x: control.close.maxX - 8, y: control.close.minY + 8),
-                 to: CGPoint(x: control.close.minX + 8, y: control.close.maxY - 8), color: .labelColor, dashed: false)
+            if let close = control.close {
+                NSColor.windowBackgroundColor.setFill()
+                NSBezierPath(roundedRect: close, xRadius: 4, yRadius: 4).fill()
+                line(from: CGPoint(x: close.minX + 8, y: close.minY + 8),
+                     to: CGPoint(x: close.maxX - 8, y: close.maxY - 8), color: .labelColor, dashed: false)
+                line(from: CGPoint(x: close.maxX - 8, y: close.minY + 8),
+                     to: CGPoint(x: close.minX + 8, y: close.maxY - 8), color: .labelColor, dashed: false)
+            }
             if control.target == .selection && showsSnapIndicator {
                 drawSnapIcon(in: CGRect(x: control.label.midX - 8, y: control.label.maxY + 4, width: 16, height: 16))
             }
@@ -833,15 +850,15 @@ final class MeasurementView: NSView {
         var controls: [LabelControl] = []
         func append(_ target: ControlTarget, text: String, group: CGRect) {
             let detail = toleranceDetail(for: target)
-            let label = CGRect(x: group.minX, y: group.minY, width: max(0, group.width - 27), height: 28)
-            controls.append(LabelControl(target: target, text: text, detail: detail, label: label,
-                close: CGRect(x: label.maxX + 3, y: label.minY + 2, width: 24, height: 24), group: group))
+            let label = CGRect(x: group.minX, y: group.minY, width: max(0, group.width - target.closeWidth), height: 28)
+            let close = target.closeWidth == 0 ? nil : CGRect(x: label.maxX + 3, y: label.minY + 2, width: 24, height: 24)
+            controls.append(LabelControl(target: target, text: text, detail: detail, label: label, close: close, group: group))
         }
         func size(_ text: String, height: CGFloat = 28, target: ControlTarget? = nil) -> CGSize {
             let detail = target.flatMap { toleranceDetail(for: $0) }
             let textWidth = (text as NSString).size(withAttributes: textAttributes).width
             let badgeWidth = detail.map { toleranceBadgeWidth($0) + 12 } ?? 0
-            return CGSize(width: textWidth + badgeWidth + 49, height: height)
+            return CGSize(width: textWidth + badgeWidth + 22 + (target?.closeWidth ?? 27), height: height)
         }
         func area(_ rect: CGRect, target: ControlTarget, prefix: String = "") {
             let text = prefix + areaLabelText(rect)
@@ -889,7 +906,7 @@ final class MeasurementView: NSView {
     func interactionCursor(at point: CGPoint) -> NSCursor? {
         if dragging { return .closedHand }
         let controls = labelControls()
-        if controls.contains(where: { $0.close.contains(point) }) { return .pointingHand }
+        if controls.contains(where: { $0.close?.contains(point) == true }) { return .pointingHand }
         if controls.contains(where: { $0.label.contains(point) }) { return .openHand }
         if let selection, selection.insetBy(dx: -8, dy: -8).contains(point) {
             let corners = [selection.origin, CGPoint(x: selection.maxX, y: selection.minY),
