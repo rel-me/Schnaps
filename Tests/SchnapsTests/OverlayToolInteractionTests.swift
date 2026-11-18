@@ -135,30 +135,58 @@ func draggingAMarkerTransfersItsDisplayAndPersistsTheDrop(tool: DesignTool, abov
 }
 
 @Test(arguments: [DesignTool.frames, .overlay, .screens]) @MainActor
-func aMarkerAcrossTheSeamDrawsOnBothDisplaysWithOneLabel(tool: DesignTool) throws {
+func aMarkerAcrossTheSeamCanMoveAndCloseFromItsNewDisplay(tool: DesignTool) throws {
   let screen = try #require(NSScreen.main)
   let name = "Schnaps.MarkerSeam.Tests." + UUID().uuidString
   let defaults = try #require(UserDefaults(suiteName: name))
   defer { defaults.removePersistentDomain(forName: name) }
   let state = DesignTools(defaults: defaults)
-  let source = screen.frame
-  let sourceID = DesignTools.displayID(screen)
-  let targetID = UInt32.max
-  let target = source.offsetBy(dx: source.width, dy: 0)
-  let canvas = DesignCanvas(frame: CGRect(origin: .zero, size: source.size), screen: screen, state: state) {
-    [(sourceID, source), (targetID, target)]
+  let destination = screen.frame
+  let destinationID = DesignTools.displayID(screen)
+  let sourceID = UInt32.max
+  let source = destination.offsetBy(dx: destination.width, dy: 0)
+  let canvas = DesignCanvas(frame: CGRect(origin: .zero, size: destination.size), screen: screen, state: state) {
+    [(sourceID, source), (destinationID, destination)]
   }
-  var marker = DesignMarker(tool: tool, display: targetID)
+  let panel = DesignPanel(contentRect: destination, styleMask: [.borderless, .nonactivatingPanel],
+    backing: .buffered, defer: false)
+  panel.isReleasedWhenClosed = false
+  panel.contentView = canvas
+  defer { panel.close() }
+  var marker = DesignMarker(tool: tool, display: sourceID)
   marker.x = -40
   state.markers = [marker]
   state.visible = true
   state.editing = true
 
   let projection = try #require(canvas.displayedMarkers.first)
-  #expect(projection.rect.minX == source.width - 40)
+  #expect(projection.rect.minX == destination.width - 40)
   #expect(canvas.markerLabelRect(for: projection) == nil)
   #expect(canvas.removeButtonRect(for: projection) == nil)
-  #expect(canvas.editableMarker(at: CGPoint(x: source.width - 20, y: marker.y + 50))?.id == marker.id)
+  let start = CGPoint(x: destination.width - 20, y: marker.y + 50)
+  #expect(canvas.editableMarker(at: start)?.id == marker.id)
+
+  let stationary = DesignMarker(tool: .frames, display: destinationID)
+  state.markers.append(stationary)
+  let drop = CGPoint(x: start.x - 170, y: start.y)
+  canvas.mouseDown(with: try mouse(.leftMouseDown, at: start, in: canvas))
+  canvas.mouseDragged(with: try mouse(.leftMouseDragged, at: drop, in: canvas))
+  canvas.mouseUp(with: try mouse(.leftMouseUp, at: drop, in: canvas))
+
+  let moved = try #require(state.selected)
+  #expect(moved.id == marker.id)
+  #expect(moved.display == destinationID)
+  #expect(moved.rect.maxX > destination.width)
+  #expect(state.markers == [moved, stationary])
+  let button = try #require(canvas.removeButtonRect(for: moved))
+  let click = try mouse(.leftMouseDown, at: CGPoint(x: button.midX, y: button.midY), in: canvas)
+  #expect(canvas.acceptsFirstMouse(for: click))
+  canvas.mouseDown(with: click)
+
+  #expect(state.markers == [stationary])
+  #expect(canvas.displayedMarkers == [stationary])
+  let persisted = try #require(defaults.data(forKey: "designMarkers.v1"))
+  #expect(try JSONDecoder().decode([DesignMarker].self, from: persisted) == [stationary])
 }
 
 @Test(arguments: [DesignTool.loupe, .crosshair], [false, true]) @MainActor
