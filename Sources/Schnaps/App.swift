@@ -36,6 +36,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var hotKeys: [EventHotKeyRef] = []
     private var recordingShortcut = false
     private var handler: EventHandlerRef?
+    private var floatingToolsActive = false
+    private var measurementBlocksEscape = false
+    private var escapeSubscriptions = Set<AnyCancellable>()
+    private lazy var floatingEscape = FloatingToolEscapeShortcut {
+        DesignTools.shared.dismiss?()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppBranding.installIcon()
@@ -60,7 +66,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             DesignTools.shared.editing = false
         }
         toolOverlay.onVisibilityChanged = { [weak self] in self?.updateToolOverlayMenu() }
-        overlay.onActivationChanged = { [weak self] in self?.toolOverlay.measurementChanged($0) }
+        overlay.onActivationChanged = { [weak self] active in
+            self?.toolOverlay.measurementChanged(active)
+            self?.measurementBlocksEscape = active
+            self?.updateEscapeShortcut()
+        }
         buildMenus()
         toolOverlay.restore()
         // Creating a status item can synchronously change its autosaved visibility defaults.
@@ -77,6 +87,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ]
         if ReleaseUpdates.enabled { updaterController.startUpdater() }
         installHotKey()
+        Publishers.CombineLatest(DesignTools.shared.$crosshair, DesignTools.shared.$loupe)
+            .sink { [weak self] crosshair, loupe in
+                self?.floatingToolsActive = crosshair || loupe
+                self?.updateEscapeShortcut()
+            }.store(in: &escapeSubscriptions)
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
+            NotificationCenter.default.publisher(for: name).sink { [weak self] _ in
+                // Let AppKit finish transferring key-window ownership first.
+                DispatchQueue.main.async { self?.updateEscapeShortcut() }
+            }.store(in: &escapeSubscriptions)
+        }
         ShortcutSettings.shared.onChange = { [weak self] in
             guard let self else { return }
             if !recordingShortcut { refreshHotKeys() }
@@ -85,6 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ShortcutSettings.shared.onRecordingChanged = { [weak self] recording in
             self?.recordingShortcut = recording
             if recording { self?.removeHotKeys() } else { self?.refreshHotKeys() }
+            self?.updateEscapeShortcut()
         }
         ShortcutSettings.shared.checkAvailability = { binding in
             var key: EventHotKeyRef?
@@ -372,7 +394,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func installHotKey() {
-        var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        var eventTypes = [
+            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
+            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased)),
+        ]
         let pointer = Unmanaged.passUnretained(self).toOpaque()
         InstallEventHandler(GetApplicationEventTarget(), { _, event, context in
             guard let context else { return OSStatus(eventNotHandledErr) }
@@ -381,8 +406,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 EventParamType(typeEventHotKeyID), nil, MemoryLayout<EventHotKeyID>.size, nil, &id) == noErr else {
                 return OSStatus(eventNotHandledErr)
             }
+            guard id.signature == 0x5343484E else { return OSStatus(eventNotHandledErr) }
+            let pressed = GetEventKind(event) == UInt32(kEventHotKeyPressed)
             MainActor.assumeIsolated {
                 let delegate=Unmanaged<AppDelegate>.fromOpaque(context).takeUnretainedValue()
+                if id.id == FloatingToolEscapeShortcut.identifier {
+                    delegate.floatingEscape.handle(pressed: pressed)
+                    return
+                }
+                guard pressed else { return }
                 switch id.id {
                 case 1,2: delegate.start(mode:id.id==2 ? .findDimensions:.area)
                 case 3...9:
@@ -394,8 +426,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
             return noErr
-        }, 1, &eventType, pointer, &handler)
+        }, eventTypes.count, &eventTypes, pointer, &handler)
         refreshHotKeys()
+    }
+
+    private func updateEscapeShortcut() {
+        // Settings, popovers, shortcut recording, and measurement canvases retain Escape.
+        let otherWindowHasFocus = NSApp.keyWindow.map { !($0 is DesignPanel) } ?? false
+        floatingEscape.update(active: floatingToolsActive,
+            blocked: measurementBlocksEscape || recordingShortcut || otherWindowHasFocus)
     }
 
     private func removeHotKeys() {
@@ -423,6 +462,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        floatingEscape.update(active: false, blocked: false)
         for hotKey in hotKeys { UnregisterEventHotKey(hotKey) }
         if let handler { RemoveEventHandler(handler) }
     }
