@@ -481,11 +481,11 @@ final class DesignToolsController {
   init() {
     let events: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .leftMouseUp]
     localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: events) { [weak self] event in
-      self?.updateMouseInput()
+      self?.updateMouseInput(after: event.type)
       return event
     }
-    globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: events) { [weak self] _ in
-      self?.updateMouseInput()
+    globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: events) { [weak self] event in
+      self?.updateMouseInput(after: event.type)
     }
     state.redraw = { [weak self] in self?.synchronize() }
     state.show = { [weak self] tool in self?.activate(tool) }
@@ -552,8 +552,13 @@ final class DesignToolsController {
     }
   }
   private var ownsCursor = false
-  private func updateMouseInput() {
-    let dragWindow = windows.first { ($0.contentView as? DesignCanvas)?.isDragging == true }
+  private func updateMouseInput(after eventType: NSEvent.EventType? = nil) {
+    var dragWindow = windows.first { ($0.contentView as? DesignCanvas)?.isDragging == true }
+    // A release on another display can arrive outside the panel that started the drag.
+    if eventType == .leftMouseUp, let source = dragWindow?.contentView as? DesignCanvas {
+      source.cancelDragging()
+      dragWindow = nil
+    }
     var cursor: NSCursor? = dragWindow == nil ? nil : .closedHand
     for window in windows {
       guard let canvas = window.contentView as? DesignCanvas else { continue }

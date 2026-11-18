@@ -36,6 +36,10 @@ final class DesignCanvas: NSView {
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
   override var isFlipped: Bool { true }
   override var acceptsFirstResponder: Bool { true }
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+    guard let event else { return false }
+    return acceptsInput(at: convert(event.locationInWindow, from: nil))
+  }
   private var displayID: UInt32 { DesignTools.displayID(display) }
   var displayedMarkers: [DesignMarker] {
     guard state.visible else { return [] }
@@ -97,9 +101,11 @@ final class DesignCanvas: NSView {
     cursorUpdate(with: event)
   }
   var wantsMouseInput: Bool {
-    isDragging || (bounds.contains(pointer)
-      && (floatingHit(at: pointer) != nil
-        || (state.editing && (state.crosshair || editableMarker(at: pointer) != nil))))
+    isDragging || acceptsInput(at: pointer)
+  }
+  private func acceptsInput(at point: CGPoint) -> Bool {
+    bounds.contains(point) && (floatingHit(at: point) != nil
+      || (state.editing && (state.crosshair || editableMarker(at: point) != nil)))
   }
   private var pointer: CGPoint {
     display.frame.displayPoint(from: NSEvent.mouseLocation)
