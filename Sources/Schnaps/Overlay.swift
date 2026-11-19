@@ -784,10 +784,9 @@ final class MeasurementView: NSView {
             frozenImage.draw(in: bounds, from: .zero,
                 operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
         } else {
-            // AppKit can pass mouse events through fully transparent window pixels.
-            // Keep the capture-free canvas hit-testable, including before the first drag.
+            // Replace the previous drawing while keeping the canvas hit-testable.
             NSColor.black.withAlphaComponent(0.01).setFill()
-            bounds.fill()
+            dirtyRect.fill(using: .copy)
         }
         for guide in guides {
             line(from: guide.vertical ? CGPoint(x: guide.position, y: 0) : CGPoint(x: 0, y: guide.position),
@@ -798,7 +797,7 @@ final class MeasurementView: NSView {
             line(from: CGPoint(x: cursor.x, y: 0), to: CGPoint(x: cursor.x, y: bounds.height), color: measurementColor(at: cursor).withAlphaComponent(0.6), dashed: true)
             line(from: CGPoint(x: 0, y: cursor.y), to: CGPoint(x: bounds.width, y: cursor.y), color: measurementColor(at: cursor).withAlphaComponent(0.6), dashed: true)
         }
-        if mode == .findDimensions, snapshot == nil, window?.frame.contains(NSEvent.mouseLocation) == true {
+        if mode == .findDimensions, snapshot == nil, pointerIsInside {
             let color = measurementColor(at: cursor)
             line(from: CGPoint(x: cursor.x - 8, y: cursor.y), to: CGPoint(x: cursor.x + 8, y: cursor.y), color: color, dashed: false)
             line(from: CGPoint(x: cursor.x, y: cursor.y - 8), to: CGPoint(x: cursor.x, y: cursor.y + 8), color: color, dashed: false)

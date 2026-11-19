@@ -119,6 +119,41 @@ struct OverlayStartupTests {
         #expect(refreshed.pinnedDistances.isEmpty)
     }
 
+    @Test func pendingCaptureCrosshairLeavesNoTrail() throws {
+        let size = 200
+        let frame = CGRect(x: 0, y: 0, width: size, height: size)
+        let view = MeasurementView(frame: frame, scale: 1, snapshot: nil, mode: .findDimensions)
+        let context = try #require(CGContext(data: nil, width: size, height: size, bitsPerComponent: 8,
+            bytesPerRow: size * 4, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        let pixels = try #require(context.data).assumingMemoryBound(to: UInt8.self)
+        func alpha(at point: Int) -> UInt8 { pixels[(point * size + point) * 4 + 3] }
+        func mouse(at point: Int) throws -> NSEvent {
+            try #require(NSEvent.mouseEvent(with: .mouseMoved, location: CGPoint(x: point, y: size - point),
+                modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+                eventNumber: 0, clickCount: 0, pressure: 0))
+        }
+
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        context.translateBy(x: 0, y: CGFloat(size))
+        context.scaleBy(x: 1, y: -1)
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+
+        view.mouseMoved(with: try mouse(at: 100))
+        view.draw(frame)
+        try #require(alpha(at: 100) > 100)
+
+        view.mouseMoved(with: try mouse(at: 150))
+        view.draw(frame)
+        #expect(alpha(at: 100) <= 3)
+        #expect(alpha(at: 150) > 100)
+
+        view.mouseExited(with: try mouse(at: 150))
+        view.draw(frame)
+        #expect(alpha(at: 150) <= 3)
+    }
+
     @Test(arguments: [true, false])
     func frozenOverlayAcceptsKeyboardWhenCaptureIsUnavailable(permissionGranted: Bool) async throws {
         _ = NSApplication.shared
