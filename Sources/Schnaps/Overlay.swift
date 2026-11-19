@@ -187,9 +187,12 @@ final class OverlayController: NSObject {
     }
 
     private func refresh(mode: MeasurementMode) {
-        let activeMode = mode
         stop()
-        toggle(mode: activeMode)
+        if mode == .findDimensions {
+            saved.removeAll()
+            savedDistances.removeAll()
+        }
+        toggle(mode: mode)
     }
 }
 

@@ -67,6 +67,58 @@ struct OverlayStartupTests {
         #expect(controller.windows.allSatisfy { $0.canBecomeKey && $0.canBecomeMain })
     }
 
+    @Test func findDimensionsRefreshClearsMeasurementsOnAllDisplays() async throws {
+        _ = NSApplication.shared
+        let snapshot = try testSnapshot()
+        let captured = AsyncStream<Void>.makeStream()
+        var captures = captured.stream.makeAsyncIterator()
+        let screen = try #require(NSScreen.screens.first)
+        let id = try #require(screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber).uint32Value
+        let controller = OverlayController(captureScreens: {
+            captured.continuation.yield(())
+            return [id: snapshot]
+        }, canCapture: { true })
+        defer { controller.stop() }
+        controller.toggle(mode: .findDimensions)
+        _ = await captures.next()
+        let window = try #require(controller.windows.first { $0.screen == screen })
+        let view = try #require(window.contentView as? MeasurementView)
+        let dimensions = try #require(snapshot.dimensions(at: CGPoint(x: 100, y: 100), tolerance: 0))
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            let event = try #require(NSEvent.mouseEvent(with: type,
+                location: CGPoint(x: 100, y: view.bounds.height - 100), modifierFlags: [],
+                timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0,
+                clickCount: 1, pressure: 1))
+            if type == .leftMouseDown { view.mouseDown(with: event) }
+            else { view.mouseUp(with: event) }
+        }
+        try #require(view.heldDimensions != nil)
+        for window in controller.windows {
+            let view = try #require(window.contentView as? MeasurementView)
+            view.pinned = [dimensions.rect]
+            view.pinnedDistances = [dimensions.horizontal]
+        }
+
+        let refresh = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+            timestamp: 0, windowNumber: window.windowNumber, context: nil,
+            characters: "r", charactersIgnoringModifiers: "r", isARepeat: false, keyCode: 15))
+        view.keyDown(with: refresh)
+        let refreshedViews = controller.windows.compactMap { $0.contentView as? MeasurementView }
+        #expect(refreshedViews.count == NSScreen.screens.count)
+        for refreshed in refreshedViews {
+            #expect(refreshed.mode == .findDimensions)
+            #expect(refreshed.captureSnapshot == nil)
+            #expect(refreshed.labelControls().isEmpty)
+        }
+
+        _ = await captures.next()
+        let refreshed = try #require(controller.windows.first { $0.screen == screen }?.contentView as? MeasurementView)
+        #expect(refreshed.captureSnapshot != nil)
+        #expect(refreshed.heldDimensions == nil)
+        #expect(refreshed.pinned.isEmpty)
+        #expect(refreshed.pinnedDistances.isEmpty)
+    }
+
     @Test(arguments: [true, false])
     func frozenOverlayAcceptsKeyboardWhenCaptureIsUnavailable(permissionGranted: Bool) async throws {
         _ = NSApplication.shared

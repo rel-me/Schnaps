@@ -41,7 +41,7 @@ Drag an exact rectangle. Move it by dragging inside, resize a corner, or use arr
 | Switch tools | S |
 | Change tolerance | T / Shift-T |
 | Adjust tolerance in Find Dimensions | Scroll up / down |
-| Refresh snapshot | R |
+| Refresh snapshot and clear measurements in Find Dimensions | R |
 | Clear measurements | Command-K |
 | Close overlay | Escape |
 
