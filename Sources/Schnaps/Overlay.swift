@@ -252,6 +252,9 @@ final class MeasurementView: NSView {
     private var controlDrag: (target: ControlTarget, spans: [DimensionSpan], position: CGFloat)?
     private var consumedClick = false
     private static let labelHeight: CGFloat = 28
+    private static let toleranceLeadingSpacing: CGFloat = 8
+    private static let toleranceIconSize: CGFloat = 12
+    private static let toleranceIconTextSpacing: CGFloat = 2
     enum ControlTarget: Equatable {
         case selection, area(Int), distances(Int, Int), held, live, guide(Int)
 
@@ -840,7 +843,8 @@ final class MeasurementView: NSView {
     }
 
     private func toleranceBadgeWidth(_ text: String) -> CGFloat {
-        (text as NSString).size(withAttributes: detailAttributes).width + 16
+        Self.toleranceLeadingSpacing + Self.toleranceIconSize + Self.toleranceIconTextSpacing
+            + (text as NSString).size(withAttributes: detailAttributes).width
     }
 
     func labelControls() -> [LabelControl] {
@@ -857,7 +861,7 @@ final class MeasurementView: NSView {
         func size(_ text: String, target: ControlTarget, extraHeight: CGFloat = 0) -> CGSize {
             let detail = toleranceDetail(for: target)
             let textWidth = (text as NSString).size(withAttributes: textAttributes).width
-            let badgeWidth = detail.map { toleranceBadgeWidth($0) + 12 } ?? 0
+            let badgeWidth = detail.map { toleranceBadgeWidth($0) } ?? 0
             return CGSize(width: textWidth + badgeWidth + 22 + (target.showsCloseButton ? closeWidth : 0),
                 height: Self.labelHeight + extraHeight)
         }
@@ -1071,16 +1075,18 @@ final class MeasurementView: NSView {
         attributes[.foregroundColor] = NSColor.labelColor
         let badgeWidth = detail.map { toleranceBadgeWidth($0) } ?? 0
         let primary = CGRect(x: rect.minX + 11, y: rect.minY + 6,
-            width: max(0, rect.width - 22 - (detail == nil ? 0 : badgeWidth + 12)), height: rect.height - 12)
+            width: max(0, rect.width - 22 - badgeWidth), height: rect.height - 12)
         (text as NSString).draw(in: primary, withAttributes: attributes)
         if let detail {
-            let x = rect.maxX - 11 - badgeWidth
+            let iconX = rect.maxX - 11 - badgeWidth + Self.toleranceLeadingSpacing
+            let iconSize = Self.toleranceIconSize
+            let detailX = iconX + iconSize + Self.toleranceIconTextSpacing
             let icon = NSImage(systemSymbolName: "dial.low", accessibilityDescription: L("Tolerance"))?
                 .withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [.secondaryLabelColor]))
-            icon?.draw(in: CGRect(x: x, y: rect.midY - 6, width: 12, height: 12),
+            icon?.draw(in: CGRect(x: iconX, y: rect.midY - iconSize / 2, width: iconSize, height: iconSize),
                 from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
-            (detail as NSString).draw(in: CGRect(x: x + 16, y: rect.midY - 7,
-                width: max(0, badgeWidth - 16), height: 14), withAttributes: detailAttributes)
+            (detail as NSString).draw(in: CGRect(x: detailX, y: rect.midY - 7,
+                width: max(0, rect.maxX - 11 - detailX), height: 14), withAttributes: detailAttributes)
         }
     }
 }
