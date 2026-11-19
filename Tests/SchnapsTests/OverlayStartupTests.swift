@@ -154,6 +154,36 @@ struct OverlayStartupTests {
         #expect(alpha(at: 150) <= 3)
     }
 
+    @Test func measurementLabelDrawsWhiteTextInADarkCapsule() throws {
+        let size = 240
+        let frame = CGRect(x: 0, y: 0, width: size, height: size)
+        let view = MeasurementView(frame: frame, scale: 1, snapshot: nil, mode: .area)
+        view.pinned = [CGRect(x: 16, y: 92, width: 120, height: 80)]
+        let label = try #require(view.labelControls().first?.label)
+        let context = try #require(CGContext(data: nil, width: size, height: size, bitsPerComponent: 8,
+            bytesPerRow: size * 4, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        let pixels = try #require(context.data).assumingMemoryBound(to: UInt8.self)
+        func offset(_ x: Int, _ y: Int) -> Int { (y * size + x) * 4 }
+
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        context.translateBy(x: 0, y: CGFloat(size))
+        context.scaleBy(x: 1, y: -1)
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+        view.draw(frame)
+
+        let corner = offset(Int(label.minX) + 1, Int(label.minY) + 1)
+        #expect(pixels[corner + 3] < 10)
+        let cap = offset(Int(label.minX) + 2, Int(label.midY))
+        #expect(pixels[cap + 3] == 255)
+        #expect((35...80).contains(pixels[cap]))
+        let textPixels = (Int(label.minY)..<Int(label.maxY)).flatMap { y in
+            (Int(label.minX)..<Int(label.maxX)).map { x in pixels[offset(x, y)] }
+        }
+        #expect(textPixels.filter { $0 > 220 }.count > 20)
+    }
+
     @Test(arguments: [true, false])
     func frozenOverlayAcceptsKeyboardWhenCaptureIsUnavailable(permissionGranted: Bool) async throws {
         _ = NSApplication.shared
