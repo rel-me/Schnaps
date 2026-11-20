@@ -804,11 +804,6 @@ final class MeasurementView: NSView {
             line(from: CGPoint(x: cursor.x, y: 0), to: CGPoint(x: cursor.x, y: bounds.height), color: measurementColor(at: cursor).withAlphaComponent(0.6), dashed: true)
             line(from: CGPoint(x: 0, y: cursor.y), to: CGPoint(x: bounds.width, y: cursor.y), color: measurementColor(at: cursor).withAlphaComponent(0.6), dashed: true)
         }
-        if mode == .findDimensions, snapshot == nil, pointerIsInside {
-            let color = measurementColor(at: cursor)
-            line(from: CGPoint(x: cursor.x - 8, y: cursor.y), to: CGPoint(x: cursor.x + 8, y: cursor.y), color: color, dashed: false)
-            line(from: CGPoint(x: cursor.x, y: cursor.y - 8), to: CGPoint(x: cursor.x, y: cursor.y + 8), color: color, dashed: false)
-        }
         for (index, rect) in pinned.enumerated() { drawMeasurement(rect, index: index + 1, active: false) }
         if let rect = selection { drawMeasurement(rect, index: nil, active: true) }
         for distance in pinnedDistances { drawDistance(distance, held: true) }

@@ -165,7 +165,7 @@ struct OverlayStartupTests {
         #expect(refreshed.pinnedDistances.isEmpty)
     }
 
-    @Test func pendingCaptureCrosshairLeavesNoTrail() throws {
+    @Test func findDimensionsWaitsForCaptureBeforeDrawingMeasurement() throws {
         let size = 200
         let frame = CGRect(x: 0, y: 0, width: size, height: size)
         let view = MeasurementView(frame: frame, scale: 1, snapshot: nil, mode: .findDimensions)
@@ -188,16 +188,16 @@ struct OverlayStartupTests {
 
         view.mouseMoved(with: try mouse(at: 100))
         view.draw(frame)
-        try #require(alpha(at: 100) > 100)
+        #expect(alpha(at: 100) <= 3)
+        #expect(view.labelControls().isEmpty)
 
-        view.mouseMoved(with: try mouse(at: 150))
+        view.mouseMoved(with: try mouse(at: 120))
         view.draw(frame)
         #expect(alpha(at: 100) <= 3)
-        #expect(alpha(at: 150) > 100)
+        #expect(alpha(at: 120) <= 3)
 
-        view.mouseExited(with: try mouse(at: 150))
-        view.draw(frame)
-        #expect(alpha(at: 150) <= 3)
+        view.updateSnapshot(try testSnapshot())
+        #expect(view.labelControls().contains { $0.target == .live })
     }
 
     @Test func measurementLabelDrawsWhiteTextInADarkCapsule() throws {
