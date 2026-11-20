@@ -10,6 +10,11 @@ import Testing
     defer { defaults.removePersistentDomain(forName: name) }
     defaults.register(defaults: MeasurementPreferences.defaults)
     #expect(MeasurementPreferences.selectedTolerance(in: defaults) == .medium)
+    defaults.set(18, forKey: PreferenceKey.selectedTolerance)
+    #expect(MeasurementPreferences.selectedTolerance(in: defaults) == .medium)
+    #expect(MeasurementPreferences.threshold(.medium, in: defaults) == 12)
+    defaults.set(18, forKey: PreferenceKey.toleranceMedium)
+    #expect(MeasurementPreferences.threshold(.medium, in: defaults) == 18)
     defaults.set(73, forKey: PreferenceKey.toleranceLow)
     MeasurementPreferences.selectTolerance(.low, in: defaults)
     #expect(MeasurementPreferences.selectedTolerance(in: defaults) == .low)

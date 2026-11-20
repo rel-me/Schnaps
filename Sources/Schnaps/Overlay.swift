@@ -271,7 +271,7 @@ final class MeasurementView: NSView {
     private var dragMode = DragMode.create
     private var unit: MeasurementUnit = .points
     private(set) var mode: MeasurementMode
-    private var tolerance = 18
+    private var tolerance: Int
     private var tracking: NSTrackingArea?
     private var message: String?
     private var messageTimer: Timer?

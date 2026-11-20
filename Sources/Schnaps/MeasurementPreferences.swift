@@ -4,7 +4,7 @@ import MeasurementCore
 @MainActor
 enum MeasurementPreferences {
     static let defaults: [String: Any] = [
-        PreferenceKey.unit: "pt", PreferenceKey.roundPoints: true, PreferenceKey.tolerance: 18,
+        PreferenceKey.unit: "pt", PreferenceKey.roundPoints: true, PreferenceKey.tolerance: TolerancePreset.medium.rawValue,
         PreferenceKey.scrollTolerance: true, PreferenceKey.showInDock: false, PreferenceKey.showMenuBar: true, PreferenceKey.showAllMenuBarTools: false,
         PreferenceKey.defaultTool: MeasurementMode.findDimensions.rawValue,
         PreferenceKey.language: "system", PreferenceKey.clipboardFormat: ClipboardFormat.widthHeight.rawValue,
@@ -20,8 +20,10 @@ enum MeasurementPreferences {
         PreferenceKey.appearance: "system", PreferenceKey.animations: true,
         PreferenceKey.overlayColor: "FF375FFF", PreferenceKey.alternativeColor: "252525FF",
         PreferenceKey.guideColor: "0A84FFFF", PreferenceKey.autoContrast: true,
-        PreferenceKey.toleranceZero: 0, PreferenceKey.toleranceLow: 8,
-        PreferenceKey.toleranceMedium: 18, PreferenceKey.toleranceHigh: 36,
+        PreferenceKey.toleranceZero: TolerancePreset.zero.defaultThreshold,
+        PreferenceKey.toleranceLow: TolerancePreset.low.defaultThreshold,
+        PreferenceKey.toleranceMedium: TolerancePreset.medium.defaultThreshold,
+        PreferenceKey.toleranceHigh: TolerancePreset.high.defaultThreshold,
     ]
     static var presentation: MeasurementPresentation {
         let d = UserDefaults.standard
@@ -52,7 +54,7 @@ enum MeasurementPreferences {
     }
     static func threshold(_ preset: TolerancePreset, in d: UserDefaults = .standard) -> Int {
         let key = toleranceKey(preset)
-        return min(100, max(0, d.object(forKey: key) == nil ? preset.rawValue : d.integer(forKey: key)))
+        return min(100, max(0, d.object(forKey: key) == nil ? preset.defaultThreshold : d.integer(forKey: key)))
     }
     static var tolerance: Int { threshold(selectedTolerance) }
     static func selectTolerance(_ preset: TolerancePreset, in d: UserDefaults = .standard) {
@@ -61,7 +63,7 @@ enum MeasurementPreferences {
     }
     static func resetTolerance() {
         for preset in TolerancePreset.allCases {
-            UserDefaults.standard.set(preset.rawValue, forKey: toleranceKey(preset))
+            UserDefaults.standard.removeObject(forKey: toleranceKey(preset))
         }
         selectTolerance(.medium)
     }

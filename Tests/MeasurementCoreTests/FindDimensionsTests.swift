@@ -55,6 +55,18 @@ private func fixture(width: Int = 80, height: Int = 60, boxes: [(CGRect, UInt8)]
     #expect(pixels.objectBounds(in: region, tolerance: 36) == CGRect(x: 20, y: 15, width: 30, height: 25))
 }
 
+@Test func mediumToleranceDetectsSubtleEdges() throws {
+    let box = CGRect(x: 20, y: 15, width: 20, height: 25)
+    let pixels = try fixture(boxes: [(box, 240)])
+    let point = CGPoint(x: box.midX, y: box.midY)
+    let selection = CGRect(x: 10, y: 5, width: 50, height: 45)
+    let threshold = TolerancePreset.medium.defaultThreshold
+    #expect(pixels.dimensions(at: point, tolerance: threshold)?.rect == box)
+    #expect(pixels.objectBounds(in: selection, tolerance: threshold) == box)
+    #expect(pixels.dimensions(at: point, tolerance: 18)?.rect == CGRect(x: 0, y: 0, width: 80, height: 60))
+    #expect(pixels.objectBounds(in: selection, tolerance: 18) == nil)
+}
+
 @Test func snappedRegionClipsAndRejectsInvalidInput() throws {
     let pixels = try fixture(boxes: [(CGRect(x: 4, y: 3, width: 11, height: 7), 0)])
     #expect(pixels.objectBounds(in: CGRect(x: -10, y: -10, width: 100, height: 100))
