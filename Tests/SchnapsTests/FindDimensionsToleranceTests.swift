@@ -7,7 +7,8 @@ extension OverlayStartupTests {
     @Test @MainActor func findDimensionsLabelShowsToleranceAndScrollAndKeyboardAdjustIt() throws {
         let defaults = UserDefaults.standard
         let keys = [PreferenceKey.selectedTolerance, PreferenceKey.tolerance,
-            PreferenceKey.toleranceMedium, PreferenceKey.toleranceHigh, PreferenceKey.scrollTolerance]
+            PreferenceKey.toleranceMedium, PreferenceKey.toleranceHigh, PreferenceKey.scrollTolerance,
+            PreferenceKey.toleranceScrollSensitivity]
         let saved = keys.map { ($0, defaults.object(forKey: $0)) }
         defer {
             for (key, value) in saved {
@@ -17,6 +18,7 @@ extension OverlayStartupTests {
         defaults.set(27, forKey: PreferenceKey.toleranceMedium)
         defaults.set(61, forKey: PreferenceKey.toleranceHigh)
         defaults.set(true, forKey: PreferenceKey.scrollTolerance)
+        defaults.removeObject(forKey: PreferenceKey.toleranceScrollSensitivity)
         MeasurementPreferences.selectTolerance(.medium)
         let bounds = CGRect(x: 0, y: 0, width: 800, height: 600)
         let context = try #require(CGContext(data: nil, width: 800, height: 600, bitsPerComponent: 8,
@@ -43,9 +45,10 @@ extension OverlayStartupTests {
                 context: nil, characters: backward ? "T" : "t", charactersIgnoringModifiers: "t", isARepeat: false, keyCode: 17))
         }
         func scroll(_ delta: Int32, units: CGScrollEventUnit = .line, phase: CGScrollPhase? = nil,
-                    momentum: CGMomentumScrollPhase? = nil) throws {
+                    momentum: CGMomentumScrollPhase? = nil, timestamp: UInt64 = 0) throws {
             let cgEvent = try #require(CGEvent(scrollWheelEvent2Source: nil, units: units,
                 wheelCount: 1, wheel1: delta, wheel2: 0, wheel3: 0))
+            cgEvent.timestamp = timestamp
             if let phase { cgEvent.setIntegerValueField(.scrollWheelEventScrollPhase, value: Int64(phase.rawValue)) }
             if let momentum { cgEvent.setIntegerValueField(.scrollWheelEventMomentumPhase, value: Int64(momentum.rawValue)) }
             view.scrollWheel(with: try #require(NSEvent(cgEvent: cgEvent)))
@@ -67,6 +70,8 @@ extension OverlayStartupTests {
         #expect(live.label.height == 28)
         #expect(bounds.contains(live.label))
         try scroll(-1, units: .pixel)
+        #expect(MeasurementPreferences.selectedTolerance == .medium)
+        try scroll(-47, units: .pixel)
         #expect(MeasurementPreferences.selectedTolerance == .low)
         #expect(view.labelControls().first { $0.target == .live }?.detail == L("Low"))
         try scroll(8)
@@ -78,18 +83,38 @@ extension OverlayStartupTests {
         #expect(MeasurementPreferences.selectedTolerance == .medium)
 
         try scroll(-1, units: .pixel, phase: .began)
+        try scroll(-40, units: .pixel, phase: .changed)
+        #expect(MeasurementPreferences.selectedTolerance == .medium)
+        try scroll(-7, units: .pixel, phase: .changed)
         #expect(MeasurementPreferences.selectedTolerance == .low)
-        try scroll(-20, units: .pixel, phase: .changed)
-        #expect(MeasurementPreferences.selectedTolerance == .low)
-        try scroll(-25, units: .pixel, phase: .changed)
-        #expect(MeasurementPreferences.selectedTolerance == .zero)
-        try scroll(0, units: .pixel, phase: .ended)
-        try scroll(80, units: .pixel, momentum: .begin)
-        #expect(MeasurementPreferences.selectedTolerance == .zero)
-        try scroll(1, units: .pixel, phase: .began)
+        try scroll(-40, units: .pixel, phase: .changed)
         #expect(MeasurementPreferences.selectedTolerance == .low)
         try scroll(0, units: .pixel, phase: .ended)
+        try scroll(-80, units: .pixel, momentum: .begin)
+        try scroll(-8, units: .pixel, phase: .began)
+        #expect(MeasurementPreferences.selectedTolerance == .low)
+        try scroll(0, units: .pixel, phase: .ended)
+
         try scroll(1)
+        try scroll(1, timestamp: 500_000_000)
+        #expect(MeasurementPreferences.selectedTolerance == .low)
+        try scroll(1, timestamp: 600_000_000)
+        #expect(MeasurementPreferences.selectedTolerance == .medium)
+
+        defaults.set(ToleranceScrollSensitivity.low.rawValue, forKey: PreferenceKey.toleranceScrollSensitivity)
+        try scroll(-48, units: .pixel, phase: .began)
+        #expect(MeasurementPreferences.selectedTolerance == .medium)
+        try scroll(-32, units: .pixel, phase: .changed)
+        #expect(MeasurementPreferences.selectedTolerance == .low)
+        try scroll(0, units: .pixel, phase: .ended)
+
+        defaults.set(ToleranceScrollSensitivity.high.rawValue, forKey: PreferenceKey.toleranceScrollSensitivity)
+        try scroll(1)
+        #expect(MeasurementPreferences.selectedTolerance == .medium)
+        try scroll(16, units: .pixel, phase: .began)
+        #expect(MeasurementPreferences.selectedTolerance == .high)
+        try scroll(0, units: .pixel, phase: .ended)
+        try scroll(-1)
         #expect(MeasurementPreferences.selectedTolerance == .medium)
         view.keyDown(with: try key())
         #expect(MeasurementPreferences.selectedTolerance == .high)

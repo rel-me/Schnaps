@@ -86,6 +86,7 @@ private enum SchnapsTranslations {
         High|高|Alta|Élevée|Alta|高|Высокий
         Default tolerance|默认容差|Tolerancia predeterminada|Tolérance par défaut|Tolleranza predefinita|既定の許容値|Допуск по умолчанию
         Scroll to adjust tolerance|滚动调整容差|Desplazar para ajustar tolerancia|Défiler pour régler la tolérance|Scorri per regolare tolleranza|スクロールで許容値を調整|Настраивать допуск прокруткой
+        Scroll sensitivity|滚动灵敏度|Sensibilidad de desplazamiento|Sensibilité du défilement|Sensibilità dello scorrimento|スクロール感度|Чувствительность прокрутки
         Higher tolerance ignores subtle color differences and shadows.|较高容差忽略细微色差和阴影。|Una tolerancia mayor ignora variaciones sutiles y sombras.|Une tolérance élevée ignore les nuances et les ombres.|Una tolleranza maggiore ignora sfumature e ombre.|許容値を上げると微妙な色や影を無視します。|Высокий допуск игнорирует слабые различия цвета и тени.
         Restore Defaults|恢复默认值|Restaurar valores|Rétablir les valeurs|Ripristina predefiniti|既定値に戻す|Восстановить по умолчанию
         Interface|界面|Interfaz|Interface|Interfaccia|インターフェース|Интерфейс

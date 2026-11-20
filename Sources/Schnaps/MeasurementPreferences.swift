@@ -1,11 +1,28 @@
 import AppKit
 import MeasurementCore
 
+enum ToleranceScrollSensitivity: String, CaseIterable {
+    case low = "Low"
+    case medium = "Medium"
+    case high = "High"
+
+    static let defaultValue: Self = .medium
+
+    func scrollDistance(precise: Bool) -> CGFloat {
+        switch self {
+        case .low: precise ? 80 : 3
+        case .medium: precise ? 48 : 2
+        case .high: precise ? 16 : 1
+        }
+    }
+}
+
 @MainActor
 enum MeasurementPreferences {
     static let defaults: [String: Any] = [
         PreferenceKey.unit: "pt", PreferenceKey.roundPoints: true, PreferenceKey.tolerance: TolerancePreset.medium.rawValue,
         PreferenceKey.scrollTolerance: true, PreferenceKey.showInDock: false, PreferenceKey.showMenuBar: true, PreferenceKey.showAllMenuBarTools: false,
+        PreferenceKey.toleranceScrollSensitivity: ToleranceScrollSensitivity.defaultValue.rawValue,
         PreferenceKey.defaultTool: MeasurementMode.findDimensions.rawValue,
         PreferenceKey.language: "system", PreferenceKey.clipboardFormat: ClipboardFormat.widthHeight.rawValue,
         PreferenceKey.showUnits: true, PreferenceKey.showIndicators: false, PreferenceKey.showCursor: true,
@@ -57,6 +74,10 @@ enum MeasurementPreferences {
         return min(100, max(0, d.object(forKey: key) == nil ? preset.defaultThreshold : d.integer(forKey: key)))
     }
     static var tolerance: Int { threshold(selectedTolerance) }
+    static var toleranceScrollSensitivity: ToleranceScrollSensitivity {
+        let value = UserDefaults.standard.string(forKey: PreferenceKey.toleranceScrollSensitivity)
+        return value.flatMap(ToleranceScrollSensitivity.init(rawValue:)) ?? .defaultValue
+    }
     static func selectTolerance(_ preset: TolerancePreset, in d: UserDefaults = .standard) {
         d.set(preset.rawValue, forKey: PreferenceKey.selectedTolerance)
         d.set(threshold(preset, in: d), forKey: PreferenceKey.tolerance)
@@ -65,6 +86,7 @@ enum MeasurementPreferences {
         for preset in TolerancePreset.allCases {
             UserDefaults.standard.removeObject(forKey: toleranceKey(preset))
         }
+        UserDefaults.standard.removeObject(forKey: PreferenceKey.toleranceScrollSensitivity)
         selectTolerance(.medium)
     }
     static func resetAppearance() {

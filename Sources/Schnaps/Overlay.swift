@@ -240,7 +240,7 @@ final class MeasurementView: NSView {
     var captureSnapshot: ScreenSnapshot? { snapshot }
     private(set) var selection: CGRect?
     private var detectionRegion: CGRect?
-    private var scrollRemainder: CGFloat?
+    private var toleranceScroll: (movement: CGFloat, unphasedTimestamp: TimeInterval?, distance: CGFloat)?
     private var liveDimensions: Dimensions?
     private(set) var heldDimensions: Dimensions?
     private var modifierFlags: NSEvent.ModifierFlags = []
@@ -631,7 +631,7 @@ final class MeasurementView: NSView {
     private func toggleMode() {
         areaDetection.cancel()
         detectionRegion = nil
-        scrollRemainder = nil
+        toleranceScroll = nil
         mode = mode == .area ? .findDimensions : .area
         onModeChanged?(mode)
         liveDimensions = nil
@@ -671,26 +671,32 @@ final class MeasurementView: NSView {
 
     override func scrollWheel(with event: NSEvent) {
         guard mode == .findDimensions, snapshot != nil, !dragging,
-              UserDefaults.standard.bool(forKey: PreferenceKey.scrollTolerance),
-              event.momentumPhase.isEmpty else { return }
+              UserDefaults.standard.bool(forKey: PreferenceKey.scrollTolerance) else {
+            toleranceScroll = nil
+            return
+        }
+        guard event.momentumPhase.isEmpty else { return }
         let phase = event.phase
-        if phase != .changed { scrollRemainder = nil }
-        guard phase != .ended, phase != .cancelled else { return }
+        if !phase.isEmpty, phase != .changed {
+            toleranceScroll = nil
+        }
+        guard phase != .ended, phase != .cancelled, phase != .mayBegin else { return }
 
         let delta = event.scrollingDeltaY
         guard abs(delta) > abs(event.scrollingDeltaX) else { return }
+        let sensitivity = MeasurementPreferences.toleranceScrollSensitivity
+        let distance = sensitivity.scrollDistance(precise: event.hasPreciseScrollingDeltas)
+        // Mouse wheels and some precise devices don't report gesture boundaries.
+        let unphasedTimestamp = phase.isEmpty ? event.timestamp : nil
         var movement = delta
-        if event.hasPreciseScrollingDeltas, !phase.isEmpty {
-            // Step immediately for the first movement, then require a deliberate swipe to step again.
-            if let remainder = scrollRemainder {
-                movement += remainder
-                if abs(movement) < 40 {
-                    scrollRemainder = movement
-                    return
-                }
-            }
-            scrollRemainder = 0
+        if let previous = toleranceScroll, previous.distance == distance,
+           (previous.unphasedTimestamp == nil) == (unphasedTimestamp == nil),
+           event.timestamp - (previous.unphasedTimestamp ?? event.timestamp) <= 0.4 {
+            movement += previous.movement
         }
+        let shouldStep = abs(movement) >= distance
+        toleranceScroll = shouldStep ? nil : (movement, unphasedTimestamp, distance)
+        guard shouldStep else { return }
         // Wheel deltas can be accelerated. One event advances at most one preset.
         let current = MeasurementPreferences.selectedTolerance
         let preset = current.stepped(by: movement < 0 ? -1 : 1)
