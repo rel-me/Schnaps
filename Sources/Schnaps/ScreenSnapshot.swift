@@ -4,12 +4,28 @@ import AppKit
 @preconcurrency import ScreenCaptureKit
 import MeasurementCore
 
+extension NSWindow {
+    var screenCaptureID: CGWindowID? {
+        // AppKit window numbers can fall outside the range of WindowServer IDs.
+        let number = windowNumber
+        guard number > 0 else { return nil }
+        return CGWindowID(exactly: number)
+    }
+}
+
 @MainActor
 enum PreviewWindowRole {
-    static let browser=NSUserInterfaceItemIdentifier("SchnapsBrowserPreview")
-    static let image=NSUserInterfaceItemIdentifier("SchnapsImagePreview")
-    static var capturableIDs:Set<CGWindowID> { Set(NSApp.windows.filter{$0.isVisible && ($0.identifier==browser || $0.identifier==image)}.map{CGWindowID($0.windowNumber)}) }
-    static var sourceIDs:Set<CGWindowID> { Set(NSApp.windows.filter{$0.isVisible && $0.identifier==browser}.map{CGWindowID($0.windowNumber)}) }
+    static let browser = NSUserInterfaceItemIdentifier("SchnapsBrowserPreview")
+    static let image = NSUserInterfaceItemIdentifier("SchnapsImagePreview")
+
+    static var capturableIDs: Set<CGWindowID> {
+        Set(NSApp.windows.filter { $0.isVisible && ($0.identifier == browser || $0.identifier == image) }
+            .compactMap(\.screenCaptureID))
+    }
+
+    static var sourceIDs: Set<CGWindowID> {
+        Set(NSApp.windows.filter { $0.isVisible && $0.identifier == browser }.compactMap(\.screenCaptureID))
+    }
 }
 
 struct ScreenSnapshot: Sendable {
@@ -60,9 +76,9 @@ struct ScreenSnapshot: Sendable {
     static func capture() async throws -> [CGDirectDisplayID: ScreenSnapshot] {
         func measurementOverlayIDs() -> Set<CGWindowID> {
             Set(NSApp.windows.compactMap { window in
-                guard window.isVisible, window.windowNumber > 0,
+                guard window.isVisible,
                       window is OverlayWindow || window is DesignPanel else { return nil }
-                return CGWindowID(window.windowNumber)
+                return window.screenCaptureID
             })
         }
         let initialOverlayIDs = measurementOverlayIDs()
@@ -71,10 +87,10 @@ struct ScreenSnapshot: Sendable {
         // Settings remains part of the frozen desktop, just like preview windows.
         let settingsIDs = NSApp.windows.filter {
             $0.isVisible && $0.identifier == settingsWindowIdentifier
-        }.map { CGWindowID($0.windowNumber) }
+        }.compactMap(\.screenCaptureID)
         let capturableIDs = PreviewWindowRole.capturableIDs.union(settingsIDs)
         let processID = ProcessInfo.processInfo.processIdentifier
-        let appWindowIDs = Set(NSApp.windows.filter { $0.windowNumber > 0 }.map { CGWindowID($0.windowNumber) })
+        let appWindowIDs = Set(NSApp.windows.compactMap(\.screenCaptureID))
         let ownWindows = content.windows.filter {
             $0.owningApplication?.processID == processID || appWindowIDs.contains($0.windowID)
                 || overlayIDs.contains($0.windowID)
