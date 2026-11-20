@@ -8,7 +8,10 @@ import Testing
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
     let settings = ShortcutSettings(defaults: defaults)
-    #expect(settings.binding(for: .dimensions).label == "⇧⌘F")
+    let standard = settings.binding(for: .dimensions)
+    #expect(standard.label == "⇧⌘E")
+    #expect(standard.keyCode == UInt32(kVK_ANSI_E))
+    #expect(settings.validationError(standard, for: .dimensions) == nil)
     let custom = ShortcutBinding.make(kVK_ANSI_D, "d", [.command, .option])
     #expect(settings.set(custom, for: .dimensions) == nil)
     var cleared = settings.binding(for: .area); cleared.enabled = false

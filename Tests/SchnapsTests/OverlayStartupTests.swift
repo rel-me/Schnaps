@@ -212,6 +212,86 @@ struct OverlayStartupTests {
         #expect(view.labelControls().contains { $0.target == .live })
     }
 
+    @Test func findDimensionsActivationIgnoresInitialPointerAndUnmatchedClick() throws {
+        let frame = CGRect(x: 0, y: 0, width: 200, height: 200)
+        let panel = NSPanel(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        panel.isReleasedWhenClosed = false
+        defer { panel.close() }
+        let view = MeasurementView(frame: frame, scale: 1, snapshot: nil, mode: .findDimensions)
+        panel.contentView = view
+        let start = CGPoint(x: 100, y: 100)
+        let moved = CGPoint(x: 120, y: 110)
+        func mouse(_ type: NSEvent.EventType, at point: CGPoint) throws -> NSEvent {
+            try #require(NSEvent.mouseEvent(with: type, location: view.convert(point, to: nil),
+                modifierFlags: [], timestamp: 0, windowNumber: panel.windowNumber, context: nil,
+                eventNumber: 0, clickCount: 1, pressure: 1))
+        }
+
+        view.initializePointer(at: panel.convertPoint(toScreen: view.convert(start, to: nil)))
+        view.mouseMoved(with: try mouse(.mouseMoved, at: start))
+        view.updateSnapshot(try testSnapshot())
+        #expect(view.labelControls().isEmpty)
+
+        let enter = try #require(NSEvent.enterExitEvent(with: .mouseEntered,
+            location: view.convert(moved, to: nil), modifierFlags: [], timestamp: 0,
+            windowNumber: panel.windowNumber, context: nil, eventNumber: 0, trackingNumber: 0, userData: nil))
+        view.mouseEntered(with: enter)
+        #expect(view.labelControls().isEmpty)
+
+        view.mouseUp(with: try mouse(.leftMouseUp, at: start))
+        view.mouseDragged(with: try mouse(.leftMouseDragged, at: moved))
+        #expect(view.heldDimensions == nil)
+        #expect(view.selection == nil)
+        #expect(view.labelControls().isEmpty)
+
+        view.mouseMoved(with: try mouse(.mouseMoved, at: moved))
+        #expect(view.labelControls().first?.target == .live)
+        view.mouseDown(with: try mouse(.leftMouseDown, at: moved))
+        view.mouseUp(with: try mouse(.leftMouseUp, at: moved))
+        #expect(view.labelControls().first?.target == .held)
+    }
+
+    @Test func frozenOverlayRedrawErasesPreviousMeasurement() throws {
+        let frame = CGRect(x: 0, y: 0, width: 200, height: 200)
+        let defaults = UserDefaults.standard
+        let previousFreeze = defaults.object(forKey: PreferenceKey.freezeScreen)
+        defaults.set(true, forKey: PreferenceKey.freezeScreen)
+        defer {
+            if let previousFreeze { defaults.set(previousFreeze, forKey: PreferenceKey.freezeScreen) }
+            else { defaults.removeObject(forKey: PreferenceKey.freezeScreen) }
+        }
+        let context = try #require(CGContext(data: nil, width: 200, height: 200, bitsPerComponent: 8,
+            bytesPerRow: 800, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(NSColor.black.withAlphaComponent(0.5).cgColor)
+        context.fill(frame)
+        let image = try #require(context.makeImage())
+        let snapshot = ScreenSnapshot(image: image, pixels: try #require(PixelBuffer(image: image)), scaleX: 1, scaleY: 1)
+        let view = MeasurementView(frame: frame, scale: 1, snapshot: snapshot, mode: .findDimensions)
+        let event = try #require(NSEvent.mouseEvent(with: .mouseMoved, location: CGPoint(x: 100, y: 100),
+            modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 0, pressure: 0))
+
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        context.translateBy(x: 0, y: frame.height)
+        context.scaleBy(x: 1, y: -1)
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+        let pixels = try #require(context.data)
+        func renderedPixels() -> Data { Data(bytes: pixels, count: context.bytesPerRow * context.height) }
+
+        view.draw(frame)
+        let background = renderedPixels()
+        view.mouseMoved(with: event)
+        #expect(view.labelControls().first?.target == .live)
+        view.draw(frame)
+        let drewMeasurement = renderedPixels() != background
+        #expect(drewMeasurement)
+        view.mouseExited(with: event)
+        view.draw(frame)
+        let restoredBackground = renderedPixels() == background
+        #expect(restoredBackground)
+    }
+
     @Test func measurementLabelDrawsWhiteTextInADarkCapsule() throws {
         let size = 240
         let frame = CGRect(x: 0, y: 0, width: size, height: size)
@@ -324,6 +404,8 @@ struct OverlayStartupTests {
         view.mouseDragged(with: try event(.leftMouseDragged, end))
         #expect(!view.wantsLiveSnapshot)
         #expect(view.showsSnapIndicator)
+        #expect(view.selection != nil)
+        #expect(!view.labelControls().contains { $0.target == .selection })
         view.mouseDragged(with: try event(.leftMouseDragged, end, flags: .option))
         #expect(!view.showsSnapIndicator)
         view.mouseDragged(with: try event(.leftMouseDragged, end, flags: .shift))
@@ -334,11 +416,14 @@ struct OverlayStartupTests {
         #expect(view.captureSnapshot != nil)
         view.mouseUp(with: try event(.leftMouseUp, end))
         #expect(view.showsSnapIndicator)
+        #expect(view.labelControls().contains { $0.target == .selection })
         view.rightMouseDown(with: try event(.rightMouseDown, start))
         view.rightMouseDragged(with: try event(.rightMouseDragged, end))
         #expect(!view.showsSnapIndicator)
+        #expect(!view.labelControls().contains { $0.target == .selection })
         view.rightMouseUp(with: try event(.rightMouseUp, end))
         #expect(!view.showsSnapIndicator)
+        #expect(view.labelControls().contains { $0.target == .selection })
         view.rightMouseDown(with: try event(.rightMouseDown, end))
         view.rightMouseUp(with: try event(.rightMouseUp, end))
         #expect(view.wantsLiveSnapshot)
@@ -367,5 +452,6 @@ struct OverlayStartupTests {
         area.mouseDown(with: try event(.leftMouseDown, start))
         area.mouseDragged(with: try event(.leftMouseDragged, end))
         #expect(!area.showsSnapIndicator)
+        #expect(area.labelControls().contains { $0.target == .selection })
     }
 }

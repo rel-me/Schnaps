@@ -43,6 +43,7 @@ final class OverlayController: NSObject {
         let token = UUID()
         generation = token
         let freeze = UserDefaults.standard.bool(forKey: PreferenceKey.freezeScreen)
+        let initialPointer = NSEvent.mouseLocation
         for screen in NSScreen.screens {
             let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
             let window = OverlayWindow(screen: screen, freeze: freeze)
@@ -64,15 +65,12 @@ final class OverlayController: NSObject {
                 self.capture(view: view, displayID: id, region: region, copy: copy, togglePadding: togglePadding)
             }
             window.contentView = view
+            view.initializePointer(at: initialPointer)
             window.makeFirstResponder(view)
             window.orderFrontRegardless()
             windows.append(window)
         }
         if !freeze { focusWindows(activate: false) }
-        for window in windows {
-            guard let view = window.contentView as? MeasurementView else { continue }
-            view.initializePointer()
-        }
         // Present the canvas before ScreenCaptureKit enumerates and captures displays.
         // The capture filter excludes our overlays, so they never enter the snapshot.
         captureTask = Task { [weak self] in
@@ -233,6 +231,7 @@ final class MeasurementView: NSView {
     private var snapshot: ScreenSnapshot?
     private var frozenImage: NSImage?
     private var pointerIsInside = false
+    private var initialPointer: CGPoint?
     let areaDetection: AreaDetection
     var wantsLiveSnapshot: Bool {
         pointerIsInside && mode == .findDimensions && !dragging && selection == nil && heldDimensions == nil
@@ -240,7 +239,7 @@ final class MeasurementView: NSView {
     var captureSnapshot: ScreenSnapshot? { snapshot }
     private(set) var selection: CGRect?
     private var detectionRegion: CGRect?
-    private var scrollRemainder: CGFloat?
+    private var toleranceScroll: (movement: CGFloat, unphasedTimestamp: TimeInterval?, distance: CGFloat)?
     private var liveDimensions: Dimensions?
     private(set) var heldDimensions: Dimensions?
     private var modifierFlags: NSEvent.ModifierFlags = []
@@ -249,6 +248,7 @@ final class MeasurementView: NSView {
     private var anchor = CGPoint.zero
     private var original: CGRect?
     private var dragging = false
+    private var pressedMouseButton: Int?
     private var controlDrag: (target: ControlTarget, spans: [DimensionSpan], position: CGFloat)?
     private var consumedClick = false
     private static let toleranceLeadingSpacing: CGFloat = 8
@@ -292,6 +292,10 @@ final class MeasurementView: NSView {
 
     private var automaticAreaSnapping: Bool {
         mode == .findDimensions && !manualDrag && modifierFlags.intersection([.option, .shift]).isEmpty
+    }
+    private var isCreatingFindDimensionsArea: Bool {
+        guard mode == .findDimensions, dragging, case .create = dragMode else { return false }
+        return true
     }
     var showsSnapIndicator: Bool {
         guard mode == .findDimensions, selection != nil else { return false }
@@ -362,7 +366,8 @@ final class MeasurementView: NSView {
     override func mouseEntered(with event: NSEvent) {
         window?.makeKey()
         window?.makeFirstResponder(self)
-        mouseMoved(with: event)
+        // Opening or focusing the panel can send an enter event without pointer movement.
+        updatePointer(at: convert(event.locationInWindow, from: nil))
     }
     override func mouseExited(with event: NSEvent) {
         pointerIsInside = false
@@ -370,8 +375,14 @@ final class MeasurementView: NSView {
         needsDisplay = true
     }
     override func mouseMoved(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if point != initialPointer { initialPointer = nil }
+        updatePointer(at: point)
+    }
+
+    private func updatePointer(at point: CGPoint) {
         pointerIsInside = true
-        cursor = convert(event.locationInWindow, from: nil)
+        cursor = point
         if let interaction = interactionCursor(at: cursor) { interaction.set() }
         else if UserDefaults.standard.bool(forKey: PreferenceKey.showCursor) { NSCursor.crosshair.set() }
         else { NSCursor(image: NSImage(size: NSSize(width: 16, height: 16), flipped: false) { _ in true }, hotSpot: .zero).set() }
@@ -385,16 +396,16 @@ final class MeasurementView: NSView {
         needsDisplay = true
     }
 
-    func initializePointer() {
-        guard let window, window.frame.contains(NSEvent.mouseLocation) else { return }
+    func initializePointer(at screenPoint: CGPoint) {
+        guard let window, window.frame.contains(screenPoint) else { return }
         pointerIsInside = true
-        cursor = convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
-        updateLiveDimensions()
-        needsDisplay = true
+        cursor = convert(window.convertPoint(fromScreen: screenPoint), from: nil)
+        // AppKit may send an enter event at this position when the overlay appears.
+        if mode == .findDimensions { initialPointer = cursor }
     }
 
     private func updateLiveDimensions() {
-        if pointerIsInside, selection == nil, heldDimensions == nil, mode == .findDimensions {
+        if pointerIsInside, initialPointer == nil, selection == nil, heldDimensions == nil, mode == .findDimensions {
             liveDimensions = dimensions(at: cursor)
         } else { liveDimensions = nil }
     }
@@ -405,6 +416,8 @@ final class MeasurementView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        pressedMouseButton = event.buttonNumber
+        initialPointer = nil
         areaDetection.cancel()
         pointerIsInside = true
         window?.makeFirstResponder(self)
@@ -455,7 +468,7 @@ final class MeasurementView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard !consumedClick else { return }
+        guard pressedMouseButton == event.buttonNumber, !consumedClick else { return }
         modifierFlags = event.modifierFlags
         let point = rounded(convert(event.locationInWindow, from: nil))
         guard dragging || hypot(point.x - anchor.x, point.y - anchor.y) >= 2 else { return }
@@ -502,6 +515,9 @@ final class MeasurementView: NSView {
         needsDisplay = true
     }
     override func mouseUp(with event: NSEvent) {
+        // The overlay can appear in the middle of a click started in another window.
+        guard pressedMouseButton == event.buttonNumber else { return }
+        pressedMouseButton = nil
         if consumedClick || controlDrag != nil {
             consumedClick = false
             controlDrag = nil
@@ -526,6 +542,8 @@ final class MeasurementView: NSView {
         needsDisplay = true
     }
     override func rightMouseDown(with event: NSEvent) {
+        pressedMouseButton = event.buttonNumber
+        initialPointer = nil
         controlDrag = nil
         consumedClick = false
         areaDetection.cancel()
@@ -545,8 +563,12 @@ final class MeasurementView: NSView {
     }
     override func rightMouseDragged(with event: NSEvent) { mouseDragged(with: event) }
     override func rightMouseUp(with event: NSEvent) {
+        guard pressedMouseButton == event.buttonNumber else { return }
         if dragging { mouseUp(with: event) }
-        else { selection = nil; heldDimensions = nil; mouseMoved(with: event) }
+        else {
+            pressedMouseButton = nil
+            selection = nil; heldDimensions = nil; mouseMoved(with: event)
+        }
     }
     override func flagsChanged(with event: NSEvent) {
         modifierFlags = event.modifierFlags
@@ -631,7 +653,7 @@ final class MeasurementView: NSView {
     private func toggleMode() {
         areaDetection.cancel()
         detectionRegion = nil
-        scrollRemainder = nil
+        toleranceScroll = nil
         mode = mode == .area ? .findDimensions : .area
         onModeChanged?(mode)
         liveDimensions = nil
@@ -670,28 +692,36 @@ final class MeasurementView: NSView {
     }
 
     override func scrollWheel(with event: NSEvent) {
+        let precise = event.hasPreciseScrollingDeltas
         guard mode == .findDimensions, snapshot != nil, !dragging,
-              UserDefaults.standard.bool(forKey: PreferenceKey.scrollTolerance),
-              event.momentumPhase.isEmpty else { return }
+              let distance = MeasurementPreferences.toleranceScrollSensitivity.scrollDistance(precise: precise) else {
+            toleranceScroll = nil
+            return
+        }
+        guard event.momentumPhase.isEmpty else { return }
         let phase = event.phase
-        if phase != .changed { scrollRemainder = nil }
-        guard phase != .ended, phase != .cancelled else { return }
+        if precise, !phase.isEmpty, phase != .changed {
+            toleranceScroll = nil
+        }
+        guard phase != .ended, phase != .cancelled, phase != .mayBegin else { return }
 
         let delta = event.scrollingDeltaY
         guard abs(delta) > abs(event.scrollingDeltaX) else { return }
-        var movement = delta
-        if event.hasPreciseScrollingDeltas, !phase.isEmpty {
-            // Step immediately for the first movement, then require a deliberate swipe to step again.
-            if let remainder = scrollRemainder {
-                movement += remainder
-                if abs(movement) < 40 {
-                    scrollRemainder = movement
-                    return
-                }
-            }
-            scrollRemainder = 0
+        // A discrete wheel event counts once even if macOS accelerates its delta.
+        let unphasedTimestamp = precise && phase.isEmpty ? event.timestamp : nil
+        var movement = precise ? delta : (delta < 0 ? -1 : 1)
+        if let previous = toleranceScroll, previous.distance == distance,
+           (previous.unphasedTimestamp == nil) == (unphasedTimestamp == nil),
+           event.timestamp - (previous.unphasedTimestamp ?? event.timestamp) <= 0.4,
+           precise || previous.movement.sign == movement.sign {
+            movement += previous.movement
         }
-        // Wheel deltas can be accelerated. One event advances at most one preset.
+        guard abs(movement) >= distance else {
+            toleranceScroll = (movement, unphasedTimestamp, distance)
+            return
+        }
+        toleranceScroll = nil
+        // One event advances at most one preset.
         let current = MeasurementPreferences.selectedTolerance
         let preset = current.stepped(by: movement < 0 ? -1 : 1)
         guard preset != current else { return }
@@ -800,13 +830,13 @@ final class MeasurementView: NSView {
             accessibility += ", " + toleranceTitle
         }
         setAccessibilityValue(accessibility)
+        // Erase previous marks even when the frozen frame has translucent pixels.
+        // Keep the canvas hit-testable before and after capture.
+        NSColor.black.withAlphaComponent(0.01).setFill()
+        dirtyRect.fill(using: .copy)
         if let frozenImage, UserDefaults.standard.bool(forKey: PreferenceKey.freezeScreen) {
             frozenImage.draw(in: bounds, from: .zero,
                 operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
-        } else {
-            // Replace the previous drawing while keeping the canvas hit-testable.
-            NSColor.black.withAlphaComponent(0.01).setFill()
-            dirtyRect.fill(using: .copy)
         }
         for guide in guides {
             line(from: guide.vertical ? CGPoint(x: guide.position, y: 0) : CGPoint(x: 0, y: guide.position),
@@ -887,7 +917,7 @@ final class MeasurementView: NSView {
             append(target, text: text, group: group)
         }
         for (index, rect) in pinned.enumerated() { area(rect, target: .area(index), prefix: "\(index + 1)  ·  ") }
-        if let selection { area(selection, target: .selection) }
+        if let selection, !isCreatingFindDimensionsArea { area(selection, target: .selection) }
         func dimensions(_ value: Dimensions, target: ControlTarget) {
             let text = findDimensionsLabelText(value.rect)
             let center = CGPoint(x: value.vertical.start.x, y: value.horizontal.start.y)

@@ -18,7 +18,7 @@ Manual area measurement works without Screen Recording permission. The app runs 
 
 ## Tools
 
-**Find Dimensions — ⇧⌘F**
+**Find Dimensions — ⇧⌘E**
 
 Move the pointer to measure independent horizontal and vertical distances through nearby edges. Click to hold a reading, or drag loosely around an object to snap to its foreground bounds. Press H or V to pin one distance; Space pins both. Find Dimensions uses logical screen points on every display.
 
@@ -74,14 +74,14 @@ mise trust
 mise install
 mise run setup
 mise run test
-mise exec -- make dev
+mise exec -- make dev-open
 ```
 
 `mise.toml` and `mise.lock` pin Node/npm, Python, GitHub CLI, Wrangler, and the WebP encoders for both Apple Silicon and Intel. It also selects the installed Xcode through `DEVELOPER_DIR`, keeping Swift, the macOS SDK, asset compilers, and signing/notarization tools together. Git, Make, shell commands, and macOS utilities come with macOS/Xcode. Sparkle and its release tools are pinned by SwiftPM. Signing identities, notarization credentials, and GitHub/Cloudflare authentication must be configured per developer.
 
 Activate mise in your shell to use the commands below directly, or prefix them with `mise exec --`. For Xcode installed elsewhere, export `DEVELOPER_DIR=/path/to/Xcode.app/Contents/Developer` before running mise. Local builds use the installed Xcode version; CI explicitly selects and checks Xcode 16.4 and 26.3. Set `SCHNAPS_XCODE_VERSION` to require an exact version during `mise run setup`. CI installs the same pinned tools through `jdx/mise-action`. If an already-active shell still reports the removed `/Applications/Xcode_26.3.app` path, run `unset DEVELOPER_DIR SCHNAPS_XCODE_VERSION` and then `mise exec -- xcodebuild -version` to reload the default.
 
-Run `make dev` to build, install, and launch `/Applications/SchnapsDebug.app`. Repeating the command quits the previous debug instance and replaces it at the same path. Debug uses its own bundle identifier (`com.gabrielhandford.Schnap.debug`), settings, and privacy permissions, separate from the release app.
+Run `make dev-open` to build, install, and launch `/Applications/SchnapsDebug.app`. `make dev` is an alias. Repeating the command quits the previous debug instance and replaces it at the same path. Debug uses its own bundle identifier (`com.gabrielhandford.Schnap.debug`), settings, and privacy permissions, separate from the release app.
 
 The installer automatically signs with your Apple Development certificate when exactly one is available. Otherwise, set `SCHNAPS_SIGN_IDENTITY` to the development identity you want to keep using. Enable Screen Recording and any needed Accessibility access for **SchnapsDebug** once in System Settings → Privacy & Security. Keeping the same signing identity and bundle identifier lets macOS retain those grants across rebuilds. A signing identity change may require granting access again; ad hoc signing cannot preserve permissions reliably, so the installer requires certificate signing.
 

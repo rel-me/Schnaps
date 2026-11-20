@@ -1,4 +1,4 @@
-.PHONY: beta release promote plan-beta test dev check-release-source
+.PHONY: beta release promote plan-beta test dev dev-open check-release-source
 
 build/tools/schnaps-release: Sources/MeasurementCore/ReleaseChannel.swift Sources/MeasurementCore/ReleaseFeed.swift Scripts/Publish/Preflight.swift Scripts/Publish/main.swift
 	@mkdir -p build/tools
@@ -22,6 +22,8 @@ plan-beta: build/tools/schnaps-release
 test:
 	swift test
 
-dev:
+dev: dev-open
+
+dev-open:
 	swift Scripts/build-app.swift --install-debug
 	open /Applications/SchnapsDebug.app

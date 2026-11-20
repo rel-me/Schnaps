@@ -10,7 +10,7 @@ enum MeasurementMode: String, CaseIterable {
 enum PreferenceKey {
     static let unit = "measurementUnit"
     static let tolerance = "edgeTolerance"
-    static let scrollTolerance = "scrollAdjustsTolerance"
+    static let toleranceScrollSensitivity = "toleranceScrollSensitivity"
     static let defaultTool = "defaultTool"
     static let showInDock = "showInDock"
     static let language = "appLanguage"
@@ -83,8 +83,9 @@ struct SettingsView: View {
     @State private var settingsError: String?
     @State private var manualScreenshotPadding = 0
     @AppStorage(PreferenceKey.unit) private var unit = MeasurementUnit.points.rawValue
-    @AppStorage(PreferenceKey.tolerance) private var tolerance = TolerancePreset.medium.rawValue
-    @AppStorage(PreferenceKey.scrollTolerance) private var scrollTolerance = true
+    @AppStorage(PreferenceKey.tolerance) private var tolerance = MeasurementPreferences.defaultTolerance.rawValue
+    @AppStorage(PreferenceKey.toleranceScrollSensitivity)
+    private var toleranceScrollSensitivity = ToleranceScrollSensitivity.defaultValue
     @AppStorage(PreferenceKey.defaultTool) private var defaultTool = MeasurementMode.findDimensions.rawValue
     @AppStorage(PreferenceKey.showInDock) private var showInDock = false
     @AppStorage(PreferenceKey.language) private var language: String = "system"
@@ -114,7 +115,8 @@ struct SettingsView: View {
     @AppStorage(PreferenceKey.alternativeColor) private var alternativeColor: String = "252525FF"
     @AppStorage(PreferenceKey.guideColor) private var guideColor: String = "0A84FFFF"
     @AppStorage(PreferenceKey.autoContrast) private var autoContrast: Bool = true
-    @AppStorage(PreferenceKey.selectedTolerance) private var selectedTolerance: Int = TolerancePreset.medium.rawValue
+    @AppStorage(PreferenceKey.selectedTolerance)
+    private var selectedTolerance = MeasurementPreferences.defaultTolerance.rawValue
     @AppStorage(PreferenceKey.toleranceZero) private var zero = TolerancePreset.zero.defaultThreshold
     @AppStorage(PreferenceKey.toleranceLow) private var low = TolerancePreset.low.defaultThreshold
     @AppStorage(PreferenceKey.toleranceMedium) private var medium = TolerancePreset.medium.defaultThreshold
@@ -297,7 +299,9 @@ struct SettingsView: View {
                 Picker(L("Default tolerance"), selection: $selectedTolerance) {
                     ForEach(TolerancePreset.allCases, id: \.rawValue) { Text(L($0.title)).tag($0.rawValue) }
                 }
-                Toggle(L("Scroll to adjust tolerance"), isOn: $scrollTolerance)
+                Picker(L("Scroll sensitivity"), selection: $toleranceScrollSensitivity) {
+                    ForEach(ToleranceScrollSensitivity.allCases, id: \.self) { Text(L($0.rawValue)).tag($0) }
+                }
             } footer: {
                 Button(L("Restore Defaults")) { MeasurementPreferences.resetTolerance() }
                     .buttonStyle(.bordered).controlSize(.regular).font(.body)
@@ -347,7 +351,8 @@ struct SettingsView: View {
         .accessibilityElement(children: .contain)
     }
     private func syncTolerance() {
-        MeasurementPreferences.selectTolerance(TolerancePreset(rawValue: selectedTolerance) ?? .medium)
+        MeasurementPreferences.selectTolerance(
+            TolerancePreset(rawValue: selectedTolerance) ?? MeasurementPreferences.defaultTolerance)
     }
     private func chooseScreenshotFolder() {
         let panel=NSOpenPanel(); panel.canChooseDirectories=true; panel.canChooseFiles=false

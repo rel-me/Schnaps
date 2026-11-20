@@ -7,7 +7,7 @@ script = "mise install && mise run setup"
 [[actions]]
 name = "Run Debug App"
 icon = "run"
-command = "mise exec -- make dev"
+command = "mise exec -- make dev-open"
 
 [[actions]]
 name = "Test"
