@@ -99,16 +99,17 @@ struct OverlayStartupTests {
         view.mouseMoved(with: try mouse(.mouseMoved))
         let baseText = try #require(view.labelControls().first { $0.target == .live }?.text)
         #expect(baseText == "50 × 50")
+        let ratioText = baseText + "  1:1"
         defaults.set(true, forKey: PreferenceKey.aspectDistance)
         view.synchronizePreferences()
-        #expect(view.labelControls().first { $0.target == .live }?.text == baseText + " · 1:1")
+        #expect(view.labelControls().first { $0.target == .live }?.text == ratioText)
 
         view.mouseDown(with: try mouse(.leftMouseDown))
         view.mouseUp(with: try mouse(.leftMouseUp))
-        #expect(view.labelControls().first { $0.target == .held }?.text == baseText + " · 1:1")
+        #expect(view.labelControls().first { $0.target == .held }?.text == ratioText)
         let held = try #require(view.heldDimensions)
         view.pinnedDistances = [held.horizontal, held.vertical, held.horizontal]
-        #expect(view.labelControls().first { $0.target == .distances(0, 2) }?.text == baseText + " · 1:1")
+        #expect(view.labelControls().first { $0.target == .distances(0, 2) }?.text == ratioText)
         let single = try #require(view.labelControls().first { $0.target == .distances(2, 1) })
         #expect(single.text == "50")
 
