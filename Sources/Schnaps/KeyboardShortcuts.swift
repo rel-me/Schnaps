@@ -43,9 +43,9 @@ enum ShortcutAction: UInt32, CaseIterable, Identifiable {
         }
     }
     var defaultBinding: ShortcutBinding {
-        let codes = [kVK_ANSI_M, kVK_ANSI_F, kVK_ANSI_R, kVK_ANSI_G, kVK_ANSI_B, kVK_ANSI_O,
+        let codes = [kVK_ANSI_M, kVK_ANSI_E, kVK_ANSI_R, kVK_ANSI_G, kVK_ANSI_B, kVK_ANSI_O,
                      kVK_ANSI_S, kVK_ANSI_L, kVK_ANSI_X, kVK_ANSI_E, kVK_ANSI_H, kVK_ANSI_C]
-        let keys = ["m", "f", "r", "g", "b", "o", "s", "l", "x", "e", "h", "c"]
+        let keys = ["m", "e", "r", "g", "b", "o", "s", "l", "x", "e", "h", "c"]
         let index = Int(rawValue) - 1
         return .make(codes[index], keys[index], rawValue <= 2 ? [.command, .shift] : [.command, .control])
     }

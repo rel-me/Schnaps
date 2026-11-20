@@ -18,7 +18,7 @@ Manual area measurement works without Screen Recording permission. The app runs 
 
 ## Tools
 
-**Find Dimensions — ⇧⌘F**
+**Find Dimensions — ⇧⌘E**
 
 Move the pointer to measure independent horizontal and vertical distances through nearby edges. Click to hold a reading, or drag loosely around an object to snap to its foreground bounds. Press H or V to pin one distance; Space pins both. Find Dimensions uses logical screen points on every display.
 
