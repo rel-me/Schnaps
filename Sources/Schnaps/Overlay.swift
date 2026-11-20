@@ -293,6 +293,10 @@ final class MeasurementView: NSView {
     private var automaticAreaSnapping: Bool {
         mode == .findDimensions && !manualDrag && modifierFlags.intersection([.option, .shift]).isEmpty
     }
+    private var isCreatingFindDimensionsArea: Bool {
+        guard mode == .findDimensions, dragging, case .create = dragMode else { return false }
+        return true
+    }
     var showsSnapIndicator: Bool {
         guard mode == .findDimensions, selection != nil else { return false }
         if detectionRegion != nil { return true }
@@ -908,7 +912,7 @@ final class MeasurementView: NSView {
             append(target, text: text, group: group)
         }
         for (index, rect) in pinned.enumerated() { area(rect, target: .area(index), prefix: "\(index + 1)  ·  ") }
-        if let selection { area(selection, target: .selection) }
+        if let selection, !isCreatingFindDimensionsArea { area(selection, target: .selection) }
         func dimensions(_ value: Dimensions, target: ControlTarget) {
             let text = findDimensionsLabelText(value.rect)
             let center = CGPoint(x: value.vertical.start.x, y: value.horizontal.start.y)
