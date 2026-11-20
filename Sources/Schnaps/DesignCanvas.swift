@@ -110,12 +110,18 @@ final class DesignCanvas: NSView {
   private var pointer: CGPoint {
     display.frame.displayPoint(from: NSEvent.mouseLocation)
   }
-  private func line(_ a: CGPoint, _ b: CGPoint, color: NSColor, width: CGFloat = 1) {
-    color.setStroke()
+  private func line(_ a: CGPoint, _ b: CGPoint, color: NSColor, width: CGFloat = 1, outlined: Bool = false) {
     let path = NSBezierPath()
-    path.lineWidth = width
     path.move(to: a)
     path.line(to: b)
+    if outlined {
+      let outline = color.relativeLuminance > 0.45 ? NSColor.black : NSColor.white
+      outline.withAlphaComponent(0.65).setStroke()
+      path.lineWidth = width + 2
+      path.stroke()
+    }
+    color.setStroke()
+    path.lineWidth = width
     path.stroke()
   }
   @MainActor private struct Caption {
@@ -274,16 +280,14 @@ final class DesignCanvas: NSView {
     let point = pointer
     let crosshair = floatingPoint(.crosshair)
     if state.crosshair, bounds.contains(crosshair) {
-      var color = MeasurementPreferences.color(PreferenceKey.guideColor)
-      if UserDefaults.standard.bool(forKey: PreferenceKey.autoContrast), let pixel = sample(crosshair) {
-        color = pixel.luminance > 0.45 ? .black : .white
-      }
+      let color = MeasurementPreferences.color(PreferenceKey.guideColor)
+      let outlined = UserDefaults.standard.bool(forKey: PreferenceKey.autoContrast)
       line(
         CGPoint(x: 0, y: crosshair.y), CGPoint(x: bounds.width, y: crosshair.y), color: color,
-        width: state.lineWidth)
+        width: state.lineWidth, outlined: outlined)
       line(
         CGPoint(x: crosshair.x, y: 0), CGPoint(x: crosshair.x, y: bounds.height), color: color,
-        width: state.lineWidth)
+        width: state.lineWidth, outlined: outlined)
     }
     if state.loupe {
       let frozen =
