@@ -678,7 +678,6 @@ final class DesignToolsController {
     }
     let needsPixels =
       state.loupe || screenPreview
-      || (state.crosshair && UserDefaults.standard.bool(forKey: PreferenceKey.autoContrast))
       || (state.editing && NSEvent.modifierFlags.contains(.control))
     guard needsPixels, !capturing, Date().timeIntervalSince(lastCapture) > 0.25,
       ScreenRecordingPermission.shared.granted

@@ -52,9 +52,12 @@ final class OverlayController: NSObject {
             view.pinned = (saved[id] ?? []).map { $0.intersection(view.bounds) }.filter { !$0.isNull && !$0.isEmpty }
             view.pinnedDistances = savedDistances[id] ?? []
             view.onModeChanged = { [weak self] mode in
-                self?.mode = mode
-                self?.onStateChanged?(mode)
+                guard let self else { return }
+                self.mode = mode
+                for window in self.windows { (window.contentView as? MeasurementView)?.setMode(mode) }
+                self.onStateChanged?(mode)
             }
+            view.onClear = { [weak self] in self?.clearMeasurements() }
             view.onClose = { [weak self] in self?.stop() }
             view.onRefresh = { [weak self, weak view] in
                 guard let view else { return }
@@ -197,6 +200,12 @@ final class OverlayController: NSObject {
         }
         toggle(mode: mode)
     }
+
+    private func clearMeasurements() {
+        saved.removeAll()
+        savedDistances.removeAll()
+        for window in windows { (window.contentView as? MeasurementView)?.clearMeasurements() }
+    }
 }
 
 final class OverlayWindow: NSPanel {
@@ -230,6 +239,7 @@ final class MeasurementView: NSView {
     var pinnedDistances: [DimensionSpan] = [] { didSet { needsDisplay = true } }
     var onClose: (() -> Void)?
     var onRefresh: (() -> Void)?
+    var onClear: (() -> Void)?
     var onModeChanged: ((MeasurementMode) -> Void)?
     var onCapture: ((CGRect, Bool, Bool) -> Void)?
     private let scale: CGFloat
@@ -633,7 +643,9 @@ final class MeasurementView: NSView {
             case "c": captureScreenshot(copy: true, togglePadding: event.modifierFlags.contains(.option))
             case "p": captureScreenshot(copy: false, togglePadding: event.modifierFlags.contains(.option))
             case "x": useAlternativeColor.toggle()
-            case "k" where command: clear()
+            case "k" where command:
+                if let onClear { onClear() } else { clearMeasurements() }
+                flash("Measurements cleared")
             case "z" where command:
                 if !pinned.isEmpty {
                     areaDetection.cancel()
@@ -662,16 +674,24 @@ final class MeasurementView: NSView {
         flash(unit == .points ? "Screen points" : "Display pixels")
     }
     private func toggleMode() {
+        let next: MeasurementMode = mode == .area ? .findDimensions : .area
+        setMode(next)
+        onModeChanged?(next)
+        if mode == .findDimensions && snapshot == nil { reportCaptureFailure() }
+        else { flash(mode.rawValue) }
+    }
+
+    func setMode(_ mode: MeasurementMode) {
+        guard self.mode != mode else { return }
         areaDetection.cancel()
         detectionRegion = nil
         toleranceScroll = nil
-        mode = mode == .area ? .findDimensions : .area
-        onModeChanged?(mode)
-        liveDimensions = nil
+        cancelMouseInteraction()
+        self.mode = mode
         heldDimensions = nil
+        if mode == .area { initialPointer = nil }
         updateLiveDimensions()
-        if mode == .findDimensions && snapshot == nil { reportCaptureFailure() }
-        else { flash(mode.rawValue) }
+        needsDisplay = true
     }
 
     func reportCaptureFailure() {
@@ -692,12 +712,12 @@ final class MeasurementView: NSView {
         unit=MeasurementPreferences.presentation.unit
         appearance=MeasurementPreferences.appearance
         window?.invalidateCursorRects(for:self)
-        if mode == .findDimensions {
+        if mode == .findDimensions, previousTolerance != tolerance {
             if let held = heldDimensions {
                 // Label dragging changes the drag anchor; remeasure at the held axes instead.
                 heldDimensions = dimensions(at: CGPoint(x: held.vertical.start.x, y: held.horizontal.start.y))
             }
-            if previousTolerance != tolerance, detectionRegion != nil { detectSelectedArea() }
+            if detectionRegion != nil { detectSelectedArea() }
         }
         updateLiveDimensions(); needsDisplay=true
     }
@@ -757,14 +777,24 @@ final class MeasurementView: NSView {
         pinnedDistances.append(horizontal ? dimensions.horizontal : dimensions.vertical)
         flash(horizontal ? "Horizontal distance pinned" : "Vertical distance pinned")
     }
-    private func clear() {
+    func clearMeasurements() {
         areaDetection.cancel()
         pinned.removeAll(); pinnedDistances.removeAll(); guides.removeAll()
         detectionRegion = nil
         selection = nil; heldDimensions = nil
-        updateLiveDimensions()
-        flash("Measurements cleared")
+        cancelMouseInteraction()
+        liveDimensions = nil
+        if mode == .findDimensions { initialPointer = cursor }
+        window?.invalidateCursorRects(for: self)
+        needsDisplay = true
     }
+
+    private func cancelMouseInteraction() {
+        dragging = false
+        pressedMouseButton = nil
+        controlDrag = nil
+    }
+
     private func refresh() { onRefresh?() }
 
     private func copyDimensions(css: Bool) {

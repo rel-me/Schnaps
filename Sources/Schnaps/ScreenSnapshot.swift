@@ -60,7 +60,8 @@ struct ScreenSnapshot: Sendable {
     static func capture() async throws -> [CGDirectDisplayID: ScreenSnapshot] {
         func measurementOverlayIDs() -> Set<CGWindowID> {
             Set(NSApp.windows.compactMap { window in
-                guard window is OverlayWindow, window.isVisible, window.windowNumber > 0 else { return nil }
+                guard window.isVisible, window.windowNumber > 0,
+                      window is OverlayWindow || window is DesignPanel else { return nil }
                 return CGWindowID(window.windowNumber)
             })
         }

@@ -97,8 +97,8 @@ struct OverlayStartupTests {
         panel.contentView = view
         defer { panel.close() }
         let point = CGPoint(x: 50, y: 50)
-        func mouse(_ type: NSEvent.EventType) throws -> NSEvent {
-            try #require(NSEvent.mouseEvent(with: type, location: view.convert(point, to: nil),
+        func mouse(_ type: NSEvent.EventType, at position: CGPoint? = nil) throws -> NSEvent {
+            try #require(NSEvent.mouseEvent(with: type, location: view.convert(position ?? point, to: nil),
                 modifierFlags: [], timestamp: 0, windowNumber: panel.windowNumber, context: nil,
                 eventNumber: 0, clickCount: 1, pressure: 1))
         }
@@ -114,7 +114,13 @@ struct OverlayStartupTests {
         view.mouseDown(with: try mouse(.leftMouseDown))
         view.mouseUp(with: try mouse(.leftMouseUp))
         #expect(view.labelControls().first { $0.target == .held }?.text == ratioText)
+        let moved = CGPoint(x: 60, y: 60)
+        view.mouseDown(with: try mouse(.leftMouseDown))
+        view.mouseDragged(with: try mouse(.leftMouseDragged, at: moved))
+        view.mouseUp(with: try mouse(.leftMouseUp, at: moved))
         let held = try #require(view.heldDimensions)
+        #expect(held.rect.midX == moved.x)
+        #expect(held.rect.midY == moved.y)
         view.pinnedDistances = [held.horizontal, held.vertical, held.horizontal]
         #expect(view.labelControls().first { $0.target == .distances(0, 2) }?.text == ratioText)
         let single = try #require(view.labelControls().first { $0.target == .distances(2, 1) })
@@ -128,6 +134,7 @@ struct OverlayStartupTests {
 
         defaults.set(false, forKey: PreferenceKey.aspectDistance)
         view.synchronizePreferences()
+        #expect(view.heldDimensions?.rect == held.rect)
         #expect(view.labelControls().first { $0.target == .held }?.text == baseText)
         #expect(view.labelControls().first { $0.target == .distances(0, 2) }?.text == baseText)
     }
@@ -217,6 +224,94 @@ struct OverlayStartupTests {
 
         view.updateSnapshot(try testSnapshot())
         #expect(view.labelControls().contains { $0.target == .live })
+    }
+
+    @Test func clearAndModeSwitchApplyAcrossMeasurementPanels() async throws {
+        _ = NSApplication.shared
+        let snapshot = try testSnapshot()
+        let screen = try #require(NSScreen.screens.first)
+        let id = DesignTools.displayID(screen)
+        let captured = AsyncStream<Void>.makeStream()
+        var captures = captured.stream.makeAsyncIterator()
+        let controller = OverlayController(captureScreens: {
+            captured.continuation.yield(())
+            return [id: snapshot]
+        }, canCapture: { true })
+        defer { controller.stop() }
+        controller.toggle(mode: .findDimensions)
+        _ = await captures.next()
+        let window = try #require(controller.windows.first { $0.screen == screen })
+        let view = try #require(window.contentView as? MeasurementView)
+        let views = controller.windows.compactMap { $0.contentView as? MeasurementView }
+        let position = CGPoint(x: 100, y: 100)
+        func move(to position: CGPoint) throws {
+            let event = try #require(NSEvent.mouseEvent(with: .mouseMoved, location: view.convert(position, to: nil),
+                modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                eventNumber: 0, clickCount: 0, pressure: 0))
+            view.mouseMoved(with: event)
+        }
+        func key(_ character: String, code: UInt16, modifiers: NSEvent.ModifierFlags = []) throws {
+            let event = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero,
+                modifierFlags: modifiers, timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                characters: character, charactersIgnoringModifiers: character, isARepeat: false, keyCode: code))
+            view.keyDown(with: event)
+        }
+        let dimensions = try #require(snapshot.dimensions(at: position, tolerance: 0))
+        for panel in views {
+            panel.pinned = [dimensions.rect]
+            panel.pinnedDistances = [dimensions.horizontal]
+        }
+        try move(to: CGPoint(x: 90, y: 90))
+        try move(to: position)
+        #expect(view.labelControls().contains { $0.target == .live })
+        try key("k", code: 40, modifiers: .command)
+        #expect(views.allSatisfy { $0.labelControls().isEmpty })
+        try move(to: position)
+        #expect(view.labelControls().isEmpty)
+        try move(to: CGPoint(x: 110, y: 110))
+        #expect(view.labelControls().contains { $0.target == .live })
+        try key("s", code: 1)
+        #expect(views.allSatisfy { $0.mode == .area && $0.labelControls().isEmpty })
+        try key("s", code: 1)
+        #expect(views.allSatisfy { $0.mode == .findDimensions })
+    }
+
+    @Test func crosshairKeepsGuideColorWhenScreenPixelsArrive() throws {
+        let defaults = UserDefaults.standard
+        let keys = [PreferenceKey.guideColor, PreferenceKey.autoContrast]
+        let previous = keys.map { ($0, defaults.object(forKey: $0)) }
+        defer {
+            for (key, value) in previous {
+                if let value { defaults.set(value, forKey: key) } else { defaults.removeObject(forKey: key) }
+            }
+        }
+        defaults.set("FF0000FF", forKey: PreferenceKey.guideColor)
+        defaults.set(true, forKey: PreferenceKey.autoContrast)
+        let frame = CGRect(x: 0, y: 0, width: 200, height: 200)
+        let screen = try #require(NSScreen.screens.first)
+        let name = "Schnaps.CrosshairColor.Tests." + UUID().uuidString
+        let stateDefaults = try #require(UserDefaults(suiteName: name))
+        defer { stateDefaults.removePersistentDomain(forName: name) }
+        let state = DesignTools(defaults: stateDefaults)
+        state.crosshair = true
+        state.frozenCrosshair = CGPoint(x: screen.frame.minX + 100, y: screen.frame.maxY - 100)
+        state.lineWidth = 2
+        let canvas = DesignCanvas(frame: frame, screen: screen, state: state)
+        let colorSpace = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+        let context = try #require(CGContext(data: nil, width: 200, height: 200, bitsPerComponent: 8,
+            bytesPerRow: 800, space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        let pixels = try #require(context.data).assumingMemoryBound(to: UInt8.self)
+        let center = 100 * context.bytesPerRow + 25 * 4
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+        canvas.draw(frame)
+        #expect(Array(UnsafeBufferPointer(start: pixels + center, count: 4)) == [255, 0, 0, 255])
+        let snapshot = try testSnapshot()
+        canvas.snapshot = { snapshot }
+        canvas.draw(frame)
+        #expect(Array(UnsafeBufferPointer(start: pixels + center, count: 4)) == [255, 0, 0, 255])
     }
 
     @Test func findDimensionsActivationIgnoresInitialPointerAndUnmatchedClick() throws {
