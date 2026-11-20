@@ -116,10 +116,10 @@ struct SettingsView: View {
     @AppStorage(PreferenceKey.guideColor) private var guideColor: String = "0A84FFFF"
     @AppStorage(PreferenceKey.autoContrast) private var autoContrast: Bool = true
     @AppStorage(PreferenceKey.selectedTolerance) private var selectedTolerance: Int = TolerancePreset.medium.rawValue
-    @AppStorage(PreferenceKey.toleranceZero) private var zero: Int = 0
-    @AppStorage(PreferenceKey.toleranceLow) private var low: Int = 8
-    @AppStorage(PreferenceKey.toleranceMedium) private var medium: Int = 18
-    @AppStorage(PreferenceKey.toleranceHigh) private var high: Int = 36
+    @AppStorage(PreferenceKey.toleranceZero) private var zero = TolerancePreset.zero.defaultThreshold
+    @AppStorage(PreferenceKey.toleranceLow) private var low = TolerancePreset.low.defaultThreshold
+    @AppStorage(PreferenceKey.toleranceMedium) private var medium = TolerancePreset.medium.defaultThreshold
+    @AppStorage(PreferenceKey.toleranceHigh) private var high = TolerancePreset.high.defaultThreshold
     @ObservedObject private var recordingPermission = ScreenRecordingPermission.shared
 
     var body: some View {

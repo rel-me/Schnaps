@@ -1,9 +1,17 @@
-/// Shared values for menus, settings, keyboard cycling, and scroll adjustment.
+/// Shared presets for menus, settings, keyboard cycling, and scroll adjustment.
+/// Raw values identify saved presets and map legacy thresholds to a preset.
 public enum TolerancePreset: Int, CaseIterable, Sendable {
     case zero = 0
     case low = 8
     case medium = 18
     case high = 36
+
+    public var defaultThreshold: Int {
+        switch self {
+        case .medium: 12
+        default: rawValue
+        }
+    }
 
     public var title: String {
         switch self {
