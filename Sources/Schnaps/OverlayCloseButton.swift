@@ -8,12 +8,11 @@ enum OverlayCloseButton {
         CGRect(x: label.maxX + spacing, y: label.minY, width: label.height, height: label.height)
     }
 
-    static func draw(in frame: CGRect, background: NSColor, foreground: NSColor, cornerRadius: CGFloat) {
-        background.setFill()
-        NSBezierPath(roundedRect: frame, xRadius: cornerRadius, yRadius: cornerRadius).fill()
+    static func draw(in frame: CGRect) {
+        OverlayLabelStyle.drawBackground(in: frame)
 
         let configuration = NSImage.SymbolConfiguration(pointSize: 10, weight: .semibold)
-            .applying(NSImage.SymbolConfiguration(paletteColors: [foreground]))
+            .applying(NSImage.SymbolConfiguration(paletteColors: [OverlayLabelStyle.foreground]))
         guard let icon = NSImage(systemSymbolName: "xmark", accessibilityDescription: L("Close"))?
             .withSymbolConfiguration(configuration) else { return }
         let rect = CGRect(origin: CGPoint(x: frame.midX - icon.size.width / 2,

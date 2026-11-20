@@ -95,5 +95,13 @@ try MainActor.assumeIsolated {
 try fixture.write(to: build.appendingPathComponent("main.swift"), atomically: true, encoding: .utf8)
 let core = try FileManager.default.contentsOfDirectory(at: root.appendingPathComponent("Sources/MeasurementCore"), includingPropertiesForKeys: nil).filter { $0.pathExtension == "swift" }.map(\.path)
 try run(["swiftc", "-emit-library", "-emit-module", "-module-name", "MeasurementCore"] + core + ["-o", build.appendingPathComponent("libMeasurementCore.dylib").path, "-emit-module-path", build.appendingPathComponent("MeasurementCore.swiftmodule").path])
-try run(["swiftc", "-I", build.path, "-L", build.path, "-lMeasurementCore", "-Xlinker", "-rpath", "-Xlinker", build.path, root.appendingPathComponent("Sources/Schnaps/MeasurementPreferences.swift").path, root.appendingPathComponent("Sources/Schnaps/Localization.swift").path, build.appendingPathComponent("AppMeasurementView.swift").path, build.appendingPathComponent("main.swift").path, "-o", build.appendingPathComponent("render").path])
+let overlaySources = [
+    "AreaDetection", "AreaMeasurementLabel", "DimensionLabelPlacement", "FindDimensionsLabel", "Localization",
+    "MeasurementPreferences", "OverlayCloseButton", "OverlayControlPlacement", "OverlayLabelStyle",
+    "RulerCaptionPlacement", "ScreenshotExport",
+].map { root.appendingPathComponent("Sources/Schnaps/\($0).swift").path }
+try run(["swiftc", "-swift-version", "6", "-I", build.path, "-L", build.path, "-lMeasurementCore",
+        "-Xlinker", "-rpath", "-Xlinker", build.path]
+    + overlaySources + [build.appendingPathComponent("AppMeasurementView.swift").path,
+        build.appendingPathComponent("main.swift").path, "-o", build.appendingPathComponent("render").path])
 try run([build.appendingPathComponent("render").path] + (verifyOnly ? ["--verify-only"] : []))

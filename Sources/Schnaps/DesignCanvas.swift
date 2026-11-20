@@ -122,8 +122,8 @@ final class DesignCanvas: NSView {
     // Caption geometry is queried during event routing, outside AppKit drawing.
     private static let attributes: [NSAttributedString.Key: Any] = [
       NSAttributedString.Key(kCTFontAttributeName as String):
-        NSFont.monospacedSystemFont(ofSize: 11, weight: .medium) as CTFont,
-      NSAttributedString.Key(kCTForegroundColorAttributeName as String): CGColor(gray: 1, alpha: 1),
+        OverlayLabelStyle.font as CTFont,
+      NSAttributedString.Key(kCTForegroundColorAttributeName as String): OverlayLabelStyle.foreground.cgColor,
     ]
     let line: CTLine
     let size: CGSize
@@ -137,21 +137,21 @@ final class DesignCanvas: NSView {
     }
   }
   private func captionRect(_ text: String, at point: CGPoint) -> CGRect {
-    let size = Caption(text).size
-    return CGRect(
-      x: max(0, min(bounds.maxX - size.width - 12, point.x)),
-      y: max(0, min(bounds.maxY - size.height - 8, point.y)),
-      width: min(bounds.width, size.width + 10), height: size.height + 6)
+    OverlayControlPlacement.clamped(CGRect(origin: point, size: captionSize(text)), in: bounds)
+  }
+  private func captionSize(_ text: String) -> CGSize {
+    CGSize(width: ceil(Caption(text).size.width) + 2 * OverlayLabelStyle.horizontalPadding,
+      height: OverlayLabelStyle.height)
   }
   private func drawCaption(_ text: String, in rect: CGRect) {
-    NSColor.black.withAlphaComponent(0.86).setFill()
-    NSBezierPath(roundedRect: rect, xRadius: 3, yRadius: 3).fill()
-    guard let context = NSGraphicsContext.current?.cgContext else { return }
+    OverlayLabelStyle.drawBackground(in: rect)
+    let padding = OverlayLabelStyle.horizontalPadding
+    guard rect.width > 2 * padding, let context = NSGraphicsContext.current?.cgContext else { return }
     let caption = Caption(text)
     context.saveGState()
-    context.clip(to: rect)
+    context.clip(to: rect.insetBy(dx: padding, dy: 0))
     context.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
-    context.textPosition = CGPoint(x: rect.minX + 5, y: rect.minY + 3 + caption.ascent)
+    context.textPosition = CGPoint(x: rect.minX + padding, y: rect.midY - caption.size.height / 2 + caption.ascent)
     CTLineDraw(caption.line, context)
     context.restoreGState()
   }
@@ -246,8 +246,7 @@ final class DesignCanvas: NSView {
     guard let (text, _) = markerCaption(marker), let label = markerLabelRect(for: marker) else { return }
     drawCaption(text, in: label)
     guard let button = removeButtonRect(for: marker) else { return }
-    OverlayCloseButton.draw(in: button, background: .black.withAlphaComponent(0.86),
-      foreground: .white, cornerRadius: 3)
+    OverlayCloseButton.draw(in: button)
   }
   private func number(_ value: Double) -> String { String(format: "%.1f", value) }
   private func drawImage(_ image: NSImage, in rect: CGRect, opacity: Double = 1) {
@@ -566,9 +565,7 @@ final class DesignCanvas: NSView {
     return "Crosshair · x \(number(relative.x))  y \(number(relative.y)) pt"
   }
   func floatingLabelRect(_ tool: DesignTool) -> CGRect {
-    let text = floatingText(tool)
-    let size = Caption(text).size
-    let labelSize = CGSize(width: size.width + 10, height: size.height + 6)
+    let labelSize = captionSize(floatingText(tool))
     let label = state.floatingLabels[tool]
     let origin = (label?.display == displayID ? label?.origin : nil) ?? CGPoint(
       x: bounds.maxX - labelSize.width - 16,

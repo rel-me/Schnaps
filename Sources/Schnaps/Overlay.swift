@@ -251,7 +251,6 @@ final class MeasurementView: NSView {
     private var dragging = false
     private var controlDrag: (target: ControlTarget, spans: [DimensionSpan], position: CGFloat)?
     private var consumedClick = false
-    private static let labelHeight: CGFloat = 28
     private static let toleranceLeadingSpacing: CGFloat = 8
     private static let toleranceIconSize: CGFloat = 12
     private static let toleranceIconTextSpacing: CGFloat = 2
@@ -815,8 +814,7 @@ final class MeasurementView: NSView {
         for control in labelControls() {
             drawPill(control.text, in: control.label, detail: control.detail)
             if let close = control.close {
-                OverlayCloseButton.draw(in: close, background: .windowBackgroundColor,
-                    foreground: .labelColor, cornerRadius: 0)
+                OverlayCloseButton.draw(in: close)
             }
             if control.target == .selection && showsSnapIndicator {
                 drawSnapIcon(in: CGRect(x: control.label.midX - 8, y: control.label.maxY + 4, width: 16, height: 16))
@@ -825,7 +823,10 @@ final class MeasurementView: NSView {
         if let message {
             NSGraphicsContext.saveGraphicsState()
             if let context=NSGraphicsContext.current?.cgContext { context.setAlpha(messageAlpha) }
-            _ = pill(message, at: CGPoint(x: bounds.midX, y: bounds.height - 46), centered: true, color: .white)
+            let size = CGSize(width: labelWidth(message), height: OverlayLabelStyle.height)
+            let frame = CGRect(x: bounds.midX - size.width / 2, y: bounds.maxY - 46,
+                width: size.width, height: size.height)
+            drawPill(message, in: OverlayControlPlacement.clamped(frame, in: bounds.insetBy(dx: 8, dy: 8)))
             NSGraphicsContext.restoreGraphicsState()
         }
     }
@@ -839,7 +840,7 @@ final class MeasurementView: NSView {
         return L(preset == .medium ? "Med" : preset.title)
     }
     private var detailAttributes: [NSAttributedString.Key: Any] {
-        [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor]
+        [.font: NSFont.systemFont(ofSize: 12, weight: .medium), .foregroundColor: OverlayLabelStyle.secondaryForeground]
     }
 
     private func toleranceBadgeWidth(_ text: String) -> CGFloat {
@@ -849,21 +850,21 @@ final class MeasurementView: NSView {
 
     func labelControls() -> [LabelControl] {
         var controls: [LabelControl] = []
-        let closeWidth = Self.labelHeight + OverlayCloseButton.spacing
+        let labelHeight = OverlayLabelStyle.height
+        let closeWidth = labelHeight + OverlayCloseButton.spacing
         func append(_ target: ControlTarget, text: String, group: CGRect) {
             let detail = toleranceDetail(for: target)
             let reservedWidth = target.showsCloseButton ? closeWidth : 0
             let label = CGRect(x: group.minX, y: group.minY,
-                width: max(0, group.width - reservedWidth), height: Self.labelHeight)
+                width: max(0, group.width - reservedWidth), height: labelHeight)
             let close = target.showsCloseButton ? OverlayCloseButton.frame(beside: label) : nil
             controls.append(LabelControl(target: target, text: text, detail: detail, label: label, close: close, group: group))
         }
         func size(_ text: String, target: ControlTarget, extraHeight: CGFloat = 0) -> CGSize {
             let detail = toleranceDetail(for: target)
-            let textWidth = (text as NSString).size(withAttributes: textAttributes).width
             let badgeWidth = detail.map { toleranceBadgeWidth($0) } ?? 0
-            return CGSize(width: textWidth + badgeWidth + 22 + (target.showsCloseButton ? closeWidth : 0),
-                height: Self.labelHeight + extraHeight)
+            return CGSize(width: labelWidth(text) + badgeWidth + (target.showsCloseButton ? closeWidth : 0),
+                height: labelHeight + extraHeight)
         }
         func area(_ rect: CGRect, target: ControlTarget, prefix: String = "") {
             let text = prefix + areaLabelText(rect)
@@ -900,7 +901,7 @@ final class MeasurementView: NSView {
             let target = ControlTarget.guide(index)
             let text = "\(guide.vertical ? "x" : "y") \(presentation.value(guide.position, scale: scale))"
             let preferred = CGRect(x: guide.vertical ? guide.position + 10 : 8,
-                y: guide.vertical ? 8 : guide.position + 10, width: size(text, target: target).width, height: Self.labelHeight)
+                y: guide.vertical ? 8 : guide.position + 10, width: size(text, target: target).width, height: labelHeight)
             let group = RulerCaptionPlacement.rect(preferred: preferred,
                 origin: guide.vertical ? CGPoint(x: guide.position, y: 0) : CGPoint(x: 0, y: guide.position),
                 angle: guide.vertical ? 90 : 0, bounds: bounds.insetBy(dx: 8, dy: 8),
@@ -1054,39 +1055,32 @@ final class MeasurementView: NSView {
         color.setStroke(); path.stroke()
     }
     private var textAttributes: [NSAttributedString.Key: Any] {
-        [.font: NSFont.systemFont(ofSize: NSFont.systemFontSize), .foregroundColor: NSColor.labelColor]
+        [.font: OverlayLabelStyle.font, .foregroundColor: OverlayLabelStyle.foreground]
     }
-    private func labelRect(_ text: String, at point: CGPoint, centered: Bool) -> CGRect {
-        let size = (text as NSString).size(withAttributes: textAttributes)
-        let width = min(size.width + 22, bounds.width - 16)
-        return CGRect(x: min(max(8, point.x - (centered ? width / 2 : 0)), bounds.width - width - 8),
-                      y: min(max(8, point.y), bounds.height - 36), width: width, height: 28)
-    }
-    @discardableResult
-    private func pill(_ text: String, at point: CGPoint, centered: Bool, color: NSColor) -> CGRect {
-        let rect = labelRect(text, at: point, centered: centered)
-        drawPill(text, in: rect)
-        return rect
+    private func labelWidth(_ text: String) -> CGFloat {
+        ceil((text as NSString).size(withAttributes: textAttributes).width) + 2 * OverlayLabelStyle.horizontalPadding
     }
     private func drawPill(_ text: String, in rect: CGRect, detail: String? = nil) {
-        NSColor.windowBackgroundColor.setFill()
-        rect.fill()
-        var attributes = textAttributes
-        attributes[.foregroundColor] = NSColor.labelColor
+        OverlayLabelStyle.drawBackground(in: rect)
+        let padding = OverlayLabelStyle.horizontalPadding
         let badgeWidth = detail.map { toleranceBadgeWidth($0) } ?? 0
-        let primary = CGRect(x: rect.minX + 11, y: rect.minY + 6,
-            width: max(0, rect.width - 22 - badgeWidth), height: rect.height - 12)
+        let attributes = textAttributes
+        let textHeight = ceil((text as NSString).size(withAttributes: attributes).height)
+        let primary = CGRect(x: rect.minX + padding, y: rect.midY - textHeight / 2,
+            width: max(0, rect.width - 2 * padding - badgeWidth), height: textHeight)
         (text as NSString).draw(in: primary, withAttributes: attributes)
         if let detail {
-            let iconX = rect.maxX - 11 - badgeWidth + Self.toleranceLeadingSpacing
+            let iconX = rect.maxX - padding - badgeWidth + Self.toleranceLeadingSpacing
             let iconSize = Self.toleranceIconSize
             let detailX = iconX + iconSize + Self.toleranceIconTextSpacing
             let icon = NSImage(systemSymbolName: "dial.low", accessibilityDescription: L("Tolerance"))?
-                .withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [.secondaryLabelColor]))
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [OverlayLabelStyle.secondaryForeground]))
             icon?.draw(in: CGRect(x: iconX, y: rect.midY - iconSize / 2, width: iconSize, height: iconSize),
                 from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
-            (detail as NSString).draw(in: CGRect(x: detailX, y: rect.midY - 7,
-                width: max(0, rect.maxX - 11 - detailX), height: 14), withAttributes: detailAttributes)
+            let attributes = detailAttributes
+            let detailHeight = ceil((detail as NSString).size(withAttributes: attributes).height)
+            (detail as NSString).draw(in: CGRect(x: detailX, y: rect.midY - detailHeight / 2,
+                width: max(0, rect.maxX - padding - detailX), height: detailHeight), withAttributes: attributes)
         }
     }
 }
