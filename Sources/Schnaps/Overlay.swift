@@ -277,7 +277,16 @@ final class MeasurementView: NSView {
     private var messageTimer: Timer?
     private var colorOverride: Bool?
     private var messageAlpha: CGFloat = 1
-    private var presentation: MeasurementPresentation { var value=MeasurementPreferences.presentation; value.unit=unit; return value }
+    private var presentation: MeasurementPresentation {
+        var value = MeasurementPreferences.presentation
+        value.unit = mode == .findDimensions ? .points : unit
+        return value
+    }
+    private var distancePresentation: MeasurementPresentation {
+        var value = presentation
+        value.unit = .points
+        return value
+    }
     private var showAlignment = false
     private var guides: [(vertical: Bool, position: CGFloat)] = []
 
@@ -305,7 +314,7 @@ final class MeasurementView: NSView {
         setAccessibilityRole(.group)
         setAccessibilityIdentifier("measurement-overlay")
         setAccessibilityLabel("Measurement canvas")
-        setAccessibilityHelp("Drag to measure. S switches tools, U switches units, Scroll up/down or T/Shift-T changes tolerance, C copies a screenshot, P saves, Enter copies dimensions, Escape exits.")
+        setAccessibilityHelp("Drag to measure. S switches tools, U switches units in Measure Area, Scroll up/down or T/Shift-T changes tolerance, C copies a screenshot, P saves, Enter copies dimensions, Escape exits.")
         appearance = MeasurementPreferences.appearance
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
@@ -573,7 +582,7 @@ final class MeasurementView: NSView {
             areaDetection.cancel()
             guard let rect = selection else { return }
             detectionRegion = nil
-            let step: CGFloat = (shift ? 10 : 1) / (unit == .pixels ? scale : 1)
+            let step: CGFloat = (shift ? 10 : 1) / (presentation.unit == .pixels ? scale : 1)
             let dx: CGFloat = event.keyCode == 123 ? -step : event.keyCode == 124 ? step : 0
             let dy: CGFloat = event.keyCode == 126 ? -step : event.keyCode == 125 ? step : 0
             if event.modifierFlags.contains(.option) {
@@ -611,6 +620,10 @@ final class MeasurementView: NSView {
     }
 
     private func toggleUnit() {
+        guard mode == .area else {
+            flash("Screen points")
+            return
+        }
         unit = unit == .points ? .pixels : .points
         UserDefaults.standard.set(unit.rawValue, forKey: PreferenceKey.unit)
         flash(unit == .points ? "Screen points" : "Display pixels")
@@ -717,7 +730,7 @@ final class MeasurementView: NSView {
         guard let rect = selection ?? (heldDimensions ?? liveDimensions)?.rect ?? pinned.last else {
             if let distance = pinnedDistances.last {
                 NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(presentation.distance(distance.length,scale:scale), forType: .string)
+                NSPasteboard.general.setString(distancePresentation.distance(distance.length, scale: scale), forType: .string)
                 flash("Distance copied")
             } else { flash("Move the pointer or drag a region first") }
             return
@@ -773,7 +786,7 @@ final class MeasurementView: NSView {
     }
 
     private func findDimensionsLabelText(_ rect: CGRect) -> String {
-        FindDimensionsLabel.text(for: rect, presentation: presentation, scale: scale)
+        FindDimensionsLabel.text(for: rect, rounded: presentation.roundedPoints)
             + (aspectRatio(rect, distance: true).map { " · " + $0 } ?? "")
     }
 
@@ -889,7 +902,7 @@ final class MeasurementView: NSView {
                 dimensions(pair, target: .distances(index, 2))
                 index += 2
             } else {
-                let text = presentation.distance(span.length, scale: scale, horizontal: span.isHorizontal)
+                let text = distancePresentation.distance(span.length, scale: scale, horizontal: span.isHorizontal)
                 let target = ControlTarget.distances(index, 1)
                 append(target, text: text, group: DimensionLabelPlacement.frame(for: span,
                     size: size(text, target: target), in: bounds, avoiding: controls.map(\.group)))

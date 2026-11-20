@@ -388,7 +388,7 @@ struct SettingsView: View {
                 shortcut("Move or resize by ten units", "Add Shift")
                 shortcut("Change tolerance", "T / ⇧T")
                 shortcut("Adjust tolerance in Find Dimensions", "Scroll up / down")
-                shortcut("Switch units", "U")
+                shortcut("Switch units in Measure Area", "U")
                 shortcut("Switch measurement tool", "S")
                 shortcut("Refresh snapshot", "R")
                 shortcut("Clear measurements", "⌘K")

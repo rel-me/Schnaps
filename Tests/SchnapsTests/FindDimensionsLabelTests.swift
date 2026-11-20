@@ -3,19 +3,10 @@ import MeasurementCore
 import Testing
 @testable import Schnaps
 
-@Test func findDimensionsLabelAlwaysShowsOnlyWidthAndHeight() {
-    let rect = CGRect(x: 40, y: 100, width: 12, height: 65)
-    for units in [true, false] {
-        for indicators in [true, false] {
-            let presentation = MeasurementPresentation(showUnits: units, showIndicators: indicators)
-            #expect(FindDimensionsLabel.text(for: rect, presentation: presentation, scale: 2) == "12 × 65")
-        }
-    }
-    let pixels = MeasurementPresentation(unit: .pixels, showUnits: true, showIndicators: true)
-    #expect(FindDimensionsLabel.text(for: rect, presentation: pixels, scale: 2) == "24 × 130")
-    let fractional = MeasurementPresentation(roundedPoints: false)
-    #expect(FindDimensionsLabel.text(for: CGRect(x: 0, y: 0, width: 12.5, height: 65.25),
-                                    presentation: fractional, scale: 2) == "12.5 × 65.25")
+@Test func findDimensionsLabelFormatsScreenPointsWithConfiguredRounding() {
+    let rect = CGRect(x: 40, y: 100, width: 12.5, height: 65.25)
+    #expect(FindDimensionsLabel.text(for: rect, rounded: true) == "13 × 65")
+    #expect(FindDimensionsLabel.text(for: rect, rounded: false) == "12.5 × 65.25")
 }
 
 @Test func combinedLabelUsesCrosshairRatherThanSpanMidpoints() throws {

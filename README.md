@@ -20,7 +20,7 @@ Manual area measurement works without Screen Recording permission. The app runs 
 
 **Find Dimensions — ⇧⌘F**
 
-Move the pointer to measure independent horizontal and vertical distances through nearby edges. Click to hold a reading, or drag loosely around an object to snap to its foreground bounds. Press H or V to pin one distance; Space pins both.
+Move the pointer to measure independent horizontal and vertical distances through nearby edges. Click to hold a reading, or drag loosely around an object to snap to its foreground bounds. Press H or V to pin one distance; Space pins both. Find Dimensions uses logical screen points on every display.
 
 **Measure Area — ⇧⌘M**
 
@@ -37,7 +37,7 @@ Drag an exact rectangle. Move it by dragging inside, resize a corner, or use arr
 | Add horizontal / vertical guide | Shift-H / Shift-V |
 | Move / resize selection | Arrows / Option-Arrows |
 | Nudge by ten units | Add Shift |
-| Switch points / display pixels | U |
+| Switch points / display pixels in Measure Area | U |
 | Switch tools | S |
 | Change tolerance | T / Shift-T |
 | Adjust tolerance in Find Dimensions | Scroll up / down |

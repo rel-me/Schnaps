@@ -4,7 +4,7 @@ import Testing
 @testable import Schnaps
 
 @MainActor
-private func testSnapshot() throws -> ScreenSnapshot {
+private func testSnapshot(scale: CGFloat = 1) throws -> ScreenSnapshot {
     let context = try #require(CGContext(data: nil, width: 200, height: 200, bitsPerComponent: 8,
                                         bytesPerRow: 800, space: CGColorSpaceCreateDeviceRGB(),
                                         bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
@@ -13,7 +13,7 @@ private func testSnapshot() throws -> ScreenSnapshot {
     context.setFillColor(NSColor.black.cgColor)
     context.fill(CGRect(x: 50, y: 50, width: 100, height: 100))
     let image = try #require(context.makeImage())
-    return ScreenSnapshot(image: image, pixels: try #require(PixelBuffer(image: image)), scaleX: 1, scaleY: 1)
+    return ScreenSnapshot(image: image, pixels: try #require(PixelBuffer(image: image)), scaleX: scale, scaleY: scale)
 }
 
 @MainActor @Suite(.serialized)
@@ -67,24 +67,29 @@ struct OverlayStartupTests {
         #expect(controller.windows.allSatisfy { $0.canBecomeKey && $0.canBecomeMain })
     }
 
-    @Test func findDimensionsLabelsHonorAspectRatioPreference() throws {
+    @Test func findDimensionsLabelsUseScreenPointsOnRetinaAndHonorAspectRatioPreference() throws {
         let defaults = UserDefaults.standard
-        let keys = [PreferenceKey.aspectDistance, PreferenceKey.aspectStyle]
+        let keys = [PreferenceKey.aspectDistance, PreferenceKey.aspectStyle, PreferenceKey.aspectArea,
+            PreferenceKey.unit, PreferenceKey.showUnits, PreferenceKey.showIndicators]
         let saved = keys.map { ($0, defaults.object(forKey: $0)) }
         defer {
             for (key, value) in saved {
                 if let value { defaults.set(value, forKey: key) } else { defaults.removeObject(forKey: key) }
             }
         }
+        defaults.set("px", forKey: PreferenceKey.unit)
+        defaults.set(false, forKey: PreferenceKey.showUnits)
+        defaults.set(false, forKey: PreferenceKey.showIndicators)
+        defaults.set(false, forKey: PreferenceKey.aspectArea)
         defaults.set(false, forKey: PreferenceKey.aspectDistance)
         defaults.set(AspectRatioStyle.commonOnly.rawValue, forKey: PreferenceKey.aspectStyle)
-        let bounds = CGRect(x: 0, y: 0, width: 200, height: 200)
-        let view = MeasurementView(frame: bounds, scale: 1, snapshot: try testSnapshot(), mode: .findDimensions)
+        let bounds = CGRect(x: 0, y: 0, width: 100, height: 100)
+        let view = MeasurementView(frame: bounds, scale: 2, snapshot: try testSnapshot(scale: 2), mode: .findDimensions)
         let panel = NSPanel(contentRect: bounds, styleMask: [.borderless], backing: .buffered, defer: false)
         panel.isReleasedWhenClosed = false
         panel.contentView = view
         defer { panel.close() }
-        let point = CGPoint(x: 100, y: 100)
+        let point = CGPoint(x: 50, y: 50)
         func mouse(_ type: NSEvent.EventType) throws -> NSEvent {
             try #require(NSEvent.mouseEvent(with: type, location: view.convert(point, to: nil),
                 modifierFlags: [], timestamp: 0, windowNumber: panel.windowNumber, context: nil,
@@ -93,7 +98,7 @@ struct OverlayStartupTests {
 
         view.mouseMoved(with: try mouse(.mouseMoved))
         let baseText = try #require(view.labelControls().first { $0.target == .live }?.text)
-        #expect(!baseText.contains(" · "))
+        #expect(baseText == "50 × 50")
         defaults.set(true, forKey: PreferenceKey.aspectDistance)
         view.synchronizePreferences()
         #expect(view.labelControls().first { $0.target == .live }?.text == baseText + " · 1:1")
@@ -105,7 +110,13 @@ struct OverlayStartupTests {
         view.pinnedDistances = [held.horizontal, held.vertical, held.horizontal]
         #expect(view.labelControls().first { $0.target == .distances(0, 2) }?.text == baseText + " · 1:1")
         let single = try #require(view.labelControls().first { $0.target == .distances(2, 1) })
-        #expect(!single.text.contains(" · "))
+        #expect(single.text == "50")
+
+        view.pinned = [held.rect]
+        #expect(view.labelControls().first { $0.target == .area(0) }?.text == "1  ·  50 × 50")
+        let areaView = MeasurementView(frame: bounds, scale: 2, snapshot: nil, mode: .area)
+        areaView.pinned = [held.rect]
+        #expect(areaView.labelControls().first { $0.target == .area(0) }?.text == "1  ·  100 × 100")
 
         defaults.set(false, forKey: PreferenceKey.aspectDistance)
         view.synchronizePreferences()
