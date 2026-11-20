@@ -10,8 +10,10 @@ enum FindDimensionsLabel {
         return Dimensions(horizontal: horizontal, vertical: vertical)
     }
 
-    static func text(for rect: CGRect, presentation: MeasurementPresentation, scale: CGFloat) -> String {
-        "\(presentation.value(rect.width, scale: scale)) × \(presentation.value(rect.height, scale: scale))"
+    static func text(for rect: CGRect, rounded: Bool) -> String {
+        let width = MeasurementPresentation.number(rect.width, rounded: rounded)
+        let height = MeasurementPresentation.number(rect.height, rounded: rounded)
+        return "\(width) × \(height)"
     }
 
     /// The center is the axes' intersection, not the midpoint of either span.
