@@ -67,6 +67,52 @@ struct OverlayStartupTests {
         #expect(controller.windows.allSatisfy { $0.canBecomeKey && $0.canBecomeMain })
     }
 
+    @Test func findDimensionsLabelsHonorAspectRatioPreference() throws {
+        let defaults = UserDefaults.standard
+        let keys = [PreferenceKey.aspectDistance, PreferenceKey.aspectStyle]
+        let saved = keys.map { ($0, defaults.object(forKey: $0)) }
+        defer {
+            for (key, value) in saved {
+                if let value { defaults.set(value, forKey: key) } else { defaults.removeObject(forKey: key) }
+            }
+        }
+        defaults.set(false, forKey: PreferenceKey.aspectDistance)
+        defaults.set(AspectRatioStyle.commonOnly.rawValue, forKey: PreferenceKey.aspectStyle)
+        let bounds = CGRect(x: 0, y: 0, width: 200, height: 200)
+        let view = MeasurementView(frame: bounds, scale: 1, snapshot: try testSnapshot(), mode: .findDimensions)
+        let panel = NSPanel(contentRect: bounds, styleMask: [.borderless], backing: .buffered, defer: false)
+        panel.isReleasedWhenClosed = false
+        panel.contentView = view
+        defer { panel.close() }
+        let point = CGPoint(x: 100, y: 100)
+        func mouse(_ type: NSEvent.EventType) throws -> NSEvent {
+            try #require(NSEvent.mouseEvent(with: type, location: view.convert(point, to: nil),
+                modifierFlags: [], timestamp: 0, windowNumber: panel.windowNumber, context: nil,
+                eventNumber: 0, clickCount: 1, pressure: 1))
+        }
+
+        view.mouseMoved(with: try mouse(.mouseMoved))
+        let baseText = try #require(view.labelControls().first { $0.target == .live }?.text)
+        #expect(!baseText.contains(" · "))
+        defaults.set(true, forKey: PreferenceKey.aspectDistance)
+        view.synchronizePreferences()
+        #expect(view.labelControls().first { $0.target == .live }?.text == baseText + " · 1:1")
+
+        view.mouseDown(with: try mouse(.leftMouseDown))
+        view.mouseUp(with: try mouse(.leftMouseUp))
+        #expect(view.labelControls().first { $0.target == .held }?.text == baseText + " · 1:1")
+        let held = try #require(view.heldDimensions)
+        view.pinnedDistances = [held.horizontal, held.vertical, held.horizontal]
+        #expect(view.labelControls().first { $0.target == .distances(0, 2) }?.text == baseText + " · 1:1")
+        let single = try #require(view.labelControls().first { $0.target == .distances(2, 1) })
+        #expect(!single.text.contains(" · "))
+
+        defaults.set(false, forKey: PreferenceKey.aspectDistance)
+        view.synchronizePreferences()
+        #expect(view.labelControls().first { $0.target == .held }?.text == baseText)
+        #expect(view.labelControls().first { $0.target == .distances(0, 2) }?.text == baseText)
+    }
+
     @Test func findDimensionsRefreshClearsMeasurementsOnAllDisplays() async throws {
         _ = NSApplication.shared
         let snapshot = try testSnapshot()

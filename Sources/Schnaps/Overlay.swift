@@ -770,10 +770,15 @@ final class MeasurementView: NSView {
         return (AspectRatioStyle(rawValue:d.string(forKey:PreferenceKey.aspectStyle) ?? "") ?? .commonOnly).label(width:rect.width,height:rect.height)
     }
 
+    private func findDimensionsLabelText(_ rect: CGRect) -> String {
+        FindDimensionsLabel.text(for: rect, presentation: presentation, scale: scale)
+            + (aspectRatio(rect, distance: true).map { " · " + $0 } ?? "")
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         let description = selection.map { areaLabelText($0) } ?? (heldDimensions ?? liveDimensions).map {
-            FindDimensionsLabel.text(for: $0.rect, presentation: presentation, scale: scale)
+            findDimensionsLabelText($0.rect)
         }
         var accessibility = description.map { $0 + (showsSnapIndicator ? ", " + L("Snap") : "") } ?? "No active measurement"
         if selection == nil, heldDimensions == nil, liveDimensions != nil {
@@ -871,7 +876,7 @@ final class MeasurementView: NSView {
         for (index, rect) in pinned.enumerated() { area(rect, target: .area(index), prefix: "\(index + 1)  ·  ") }
         if let selection { area(selection, target: .selection) }
         func dimensions(_ value: Dimensions, target: ControlTarget) {
-            let text = FindDimensionsLabel.text(for: value.rect, presentation: presentation, scale: scale)
+            let text = findDimensionsLabelText(value.rect)
             let center = CGPoint(x: value.vertical.start.x, y: value.horizontal.start.y)
             let group = FindDimensionsLabel.frame(at: center, size: size(text, target: target), in: bounds,
                 avoiding: controls.map(\.group))
