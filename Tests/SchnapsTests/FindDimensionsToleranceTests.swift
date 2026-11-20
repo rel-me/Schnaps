@@ -7,7 +7,7 @@ extension OverlayStartupTests {
     @Test @MainActor func findDimensionsLabelShowsToleranceAndScrollAndKeyboardAdjustIt() throws {
         let defaults = UserDefaults.standard
         let keys = [PreferenceKey.selectedTolerance, PreferenceKey.tolerance,
-            PreferenceKey.toleranceMedium, PreferenceKey.toleranceHigh, PreferenceKey.scrollTolerance,
+            PreferenceKey.toleranceMedium, PreferenceKey.toleranceHigh,
             PreferenceKey.toleranceScrollSensitivity]
         let saved = keys.map { ($0, defaults.object(forKey: $0)) }
         defer {
@@ -17,7 +17,6 @@ extension OverlayStartupTests {
         }
         defaults.set(27, forKey: PreferenceKey.toleranceMedium)
         defaults.set(61, forKey: PreferenceKey.toleranceHigh)
-        defaults.set(true, forKey: PreferenceKey.scrollTolerance)
         defaults.removeObject(forKey: PreferenceKey.toleranceScrollSensitivity)
         MeasurementPreferences.selectTolerance(.medium)
         let bounds = CGRect(x: 0, y: 0, width: 800, height: 600)
@@ -142,9 +141,10 @@ extension OverlayStartupTests {
         #expect(view.heldDimensions?.horizontal.start.y == heldY)
         let updatedHeld = try #require(view.labelControls().first { $0.target == .held })
         #expect(updatedHeld.detail == nil)
-        defaults.set(false, forKey: PreferenceKey.scrollTolerance)
+        defaults.set(ToleranceScrollSensitivity.off.rawValue, forKey: PreferenceKey.toleranceScrollSensitivity)
         view.synchronizePreferences()
         try scroll(-1)
+        try scroll(-80, units: .pixel, phase: .began)
         #expect(MeasurementPreferences.selectedTolerance == .high)
         // Keyboard controls remain available when scroll adjustment is disabled.
         view.keyDown(with: try key(true))

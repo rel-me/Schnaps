@@ -2,14 +2,16 @@ import AppKit
 import MeasurementCore
 
 enum ToleranceScrollSensitivity: String, CaseIterable {
+    case off = "Off"
     case low = "Low"
     case medium = "Medium"
     case high = "High"
 
     static let defaultValue: Self = .medium
 
-    func scrollDistance(precise: Bool) -> CGFloat {
+    func scrollDistance(precise: Bool) -> CGFloat? {
         switch self {
+        case .off: nil
         case .low: precise ? 80 : 3
         case .medium: precise ? 24 : 1.5
         case .high: precise ? 16 : 1
@@ -21,7 +23,7 @@ enum ToleranceScrollSensitivity: String, CaseIterable {
 enum MeasurementPreferences {
     static let defaults: [String: Any] = [
         PreferenceKey.unit: "pt", PreferenceKey.roundPoints: true, PreferenceKey.tolerance: TolerancePreset.medium.rawValue,
-        PreferenceKey.scrollTolerance: true, PreferenceKey.showInDock: false, PreferenceKey.showMenuBar: true, PreferenceKey.showAllMenuBarTools: false,
+        PreferenceKey.showInDock: false, PreferenceKey.showMenuBar: true, PreferenceKey.showAllMenuBarTools: false,
         PreferenceKey.toleranceScrollSensitivity: ToleranceScrollSensitivity.defaultValue.rawValue,
         PreferenceKey.defaultTool: MeasurementMode.findDimensions.rawValue,
         PreferenceKey.language: "system", PreferenceKey.clipboardFormat: ClipboardFormat.widthHeight.rawValue,

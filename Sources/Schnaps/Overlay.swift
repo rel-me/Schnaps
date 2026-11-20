@@ -670,8 +670,9 @@ final class MeasurementView: NSView {
     }
 
     override func scrollWheel(with event: NSEvent) {
+        let precise = event.hasPreciseScrollingDeltas
         guard mode == .findDimensions, snapshot != nil, !dragging,
-              UserDefaults.standard.bool(forKey: PreferenceKey.scrollTolerance) else {
+              let distance = MeasurementPreferences.toleranceScrollSensitivity.scrollDistance(precise: precise) else {
             toleranceScroll = nil
             return
         }
@@ -684,9 +685,6 @@ final class MeasurementView: NSView {
 
         let delta = event.scrollingDeltaY
         guard abs(delta) > abs(event.scrollingDeltaX) else { return }
-        let precise = event.hasPreciseScrollingDeltas
-        let sensitivity = MeasurementPreferences.toleranceScrollSensitivity
-        let distance = sensitivity.scrollDistance(precise: precise)
         // Mouse wheels and some precise devices don't report gesture boundaries.
         let unphasedTimestamp = phase.isEmpty ? event.timestamp : nil
         var movement = delta
