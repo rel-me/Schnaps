@@ -212,6 +212,39 @@ struct OverlayStartupTests {
         #expect(view.labelControls().contains { $0.target == .live })
     }
 
+    @Test func findDimensionsActivationIgnoresInitialPointerAndUnmatchedClick() throws {
+        let frame = CGRect(x: 0, y: 0, width: 200, height: 200)
+        let panel = NSPanel(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        panel.isReleasedWhenClosed = false
+        defer { panel.close() }
+        let view = MeasurementView(frame: frame, scale: 1, snapshot: nil, mode: .findDimensions)
+        panel.contentView = view
+        let start = CGPoint(x: 100, y: 100)
+        let moved = CGPoint(x: 120, y: 110)
+        func mouse(_ type: NSEvent.EventType, at point: CGPoint) throws -> NSEvent {
+            try #require(NSEvent.mouseEvent(with: type, location: view.convert(point, to: nil),
+                modifierFlags: [], timestamp: 0, windowNumber: panel.windowNumber, context: nil,
+                eventNumber: 0, clickCount: 1, pressure: 1))
+        }
+
+        view.initializePointer(at: panel.convertPoint(toScreen: view.convert(start, to: nil)))
+        view.mouseMoved(with: try mouse(.mouseMoved, at: start))
+        view.updateSnapshot(try testSnapshot())
+        #expect(view.labelControls().isEmpty)
+
+        view.mouseUp(with: try mouse(.leftMouseUp, at: start))
+        view.mouseDragged(with: try mouse(.leftMouseDragged, at: moved))
+        #expect(view.heldDimensions == nil)
+        #expect(view.selection == nil)
+        #expect(view.labelControls().isEmpty)
+
+        view.mouseMoved(with: try mouse(.mouseMoved, at: moved))
+        #expect(view.labelControls().first?.target == .live)
+        view.mouseDown(with: try mouse(.leftMouseDown, at: moved))
+        view.mouseUp(with: try mouse(.leftMouseUp, at: moved))
+        #expect(view.labelControls().first?.target == .held)
+    }
+
     @Test func measurementLabelDrawsWhiteTextInADarkCapsule() throws {
         let size = 240
         let frame = CGRect(x: 0, y: 0, width: size, height: size)

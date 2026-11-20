@@ -43,6 +43,7 @@ final class OverlayController: NSObject {
         let token = UUID()
         generation = token
         let freeze = UserDefaults.standard.bool(forKey: PreferenceKey.freezeScreen)
+        let initialPointer = NSEvent.mouseLocation
         for screen in NSScreen.screens {
             let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
             let window = OverlayWindow(screen: screen, freeze: freeze)
@@ -64,15 +65,12 @@ final class OverlayController: NSObject {
                 self.capture(view: view, displayID: id, region: region, copy: copy, togglePadding: togglePadding)
             }
             window.contentView = view
+            view.initializePointer(at: initialPointer)
             window.makeFirstResponder(view)
             window.orderFrontRegardless()
             windows.append(window)
         }
         if !freeze { focusWindows(activate: false) }
-        for window in windows {
-            guard let view = window.contentView as? MeasurementView else { continue }
-            view.initializePointer()
-        }
         // Present the canvas before ScreenCaptureKit enumerates and captures displays.
         // The capture filter excludes our overlays, so they never enter the snapshot.
         captureTask = Task { [weak self] in
@@ -233,6 +231,7 @@ final class MeasurementView: NSView {
     private var snapshot: ScreenSnapshot?
     private var frozenImage: NSImage?
     private var pointerIsInside = false
+    private var initialPointer: CGPoint?
     let areaDetection: AreaDetection
     var wantsLiveSnapshot: Bool {
         pointerIsInside && mode == .findDimensions && !dragging && selection == nil && heldDimensions == nil
@@ -249,6 +248,7 @@ final class MeasurementView: NSView {
     private var anchor = CGPoint.zero
     private var original: CGRect?
     private var dragging = false
+    private var pressedMouseButton: Int?
     private var controlDrag: (target: ControlTarget, spans: [DimensionSpan], position: CGFloat)?
     private var consumedClick = false
     private static let toleranceLeadingSpacing: CGFloat = 8
@@ -366,12 +366,14 @@ final class MeasurementView: NSView {
     }
     override func mouseExited(with event: NSEvent) {
         pointerIsInside = false
+        initialPointer = nil
         liveDimensions = nil
         needsDisplay = true
     }
     override func mouseMoved(with event: NSEvent) {
         pointerIsInside = true
         cursor = convert(event.locationInWindow, from: nil)
+        if cursor != initialPointer { initialPointer = nil }
         if let interaction = interactionCursor(at: cursor) { interaction.set() }
         else if UserDefaults.standard.bool(forKey: PreferenceKey.showCursor) { NSCursor.crosshair.set() }
         else { NSCursor(image: NSImage(size: NSSize(width: 16, height: 16), flipped: false) { _ in true }, hotSpot: .zero).set() }
@@ -385,16 +387,16 @@ final class MeasurementView: NSView {
         needsDisplay = true
     }
 
-    func initializePointer() {
-        guard let window, window.frame.contains(NSEvent.mouseLocation) else { return }
+    func initializePointer(at screenPoint: CGPoint) {
+        guard let window, window.frame.contains(screenPoint) else { return }
         pointerIsInside = true
-        cursor = convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
-        updateLiveDimensions()
-        needsDisplay = true
+        cursor = convert(window.convertPoint(fromScreen: screenPoint), from: nil)
+        // AppKit may send an enter event at this position when the overlay appears.
+        if mode == .findDimensions { initialPointer = cursor }
     }
 
     private func updateLiveDimensions() {
-        if pointerIsInside, selection == nil, heldDimensions == nil, mode == .findDimensions {
+        if pointerIsInside, initialPointer == nil, selection == nil, heldDimensions == nil, mode == .findDimensions {
             liveDimensions = dimensions(at: cursor)
         } else { liveDimensions = nil }
     }
@@ -405,6 +407,8 @@ final class MeasurementView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        pressedMouseButton = event.buttonNumber
+        initialPointer = nil
         areaDetection.cancel()
         pointerIsInside = true
         window?.makeFirstResponder(self)
@@ -455,7 +459,7 @@ final class MeasurementView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard !consumedClick else { return }
+        guard pressedMouseButton == event.buttonNumber, !consumedClick else { return }
         modifierFlags = event.modifierFlags
         let point = rounded(convert(event.locationInWindow, from: nil))
         guard dragging || hypot(point.x - anchor.x, point.y - anchor.y) >= 2 else { return }
@@ -502,6 +506,9 @@ final class MeasurementView: NSView {
         needsDisplay = true
     }
     override func mouseUp(with event: NSEvent) {
+        // The overlay can appear in the middle of a click started in another window.
+        guard pressedMouseButton == event.buttonNumber else { return }
+        pressedMouseButton = nil
         if consumedClick || controlDrag != nil {
             consumedClick = false
             controlDrag = nil
@@ -526,6 +533,8 @@ final class MeasurementView: NSView {
         needsDisplay = true
     }
     override func rightMouseDown(with event: NSEvent) {
+        pressedMouseButton = event.buttonNumber
+        initialPointer = nil
         controlDrag = nil
         consumedClick = false
         areaDetection.cancel()
@@ -545,8 +554,12 @@ final class MeasurementView: NSView {
     }
     override func rightMouseDragged(with event: NSEvent) { mouseDragged(with: event) }
     override func rightMouseUp(with event: NSEvent) {
+        guard pressedMouseButton == event.buttonNumber else { return }
         if dragging { mouseUp(with: event) }
-        else { selection = nil; heldDimensions = nil; mouseMoved(with: event) }
+        else {
+            pressedMouseButton = nil
+            selection = nil; heldDimensions = nil; mouseMoved(with: event)
+        }
     }
     override func flagsChanged(with event: NSEvent) {
         modifierFlags = event.modifierFlags
