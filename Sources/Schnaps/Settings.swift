@@ -79,7 +79,6 @@ struct SettingsView: View {
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject var navigation: SettingsNavigation
     @ObservedObject var updates: UpdateSettings
-    @StateObject private var membership = ProMembership()
     @StateObject private var loginItem = LoginItem()
     @State private var settingsError: String?
     @State private var manualScreenshotPadding = 0
@@ -468,7 +467,6 @@ struct SettingsView: View {
                         .font(.body)
                 }
             }
-            ProSection(membership: membership)
         }
     }
 
