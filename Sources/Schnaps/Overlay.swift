@@ -774,7 +774,7 @@ final class MeasurementView: NSView {
 
     private func findDimensionsLabelText(_ rect: CGRect) -> String {
         FindDimensionsLabel.text(for: rect, presentation: presentation, scale: scale)
-            + (aspectRatio(rect, distance: true).map { " · " + $0 } ?? "")
+            + (aspectRatio(rect, distance: true).map { "  " + $0 } ?? "")
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -845,7 +845,7 @@ final class MeasurementView: NSView {
         return L(preset == .medium ? "Med" : preset.title)
     }
     private var detailAttributes: [NSAttributedString.Key: Any] {
-        [.font: NSFont.systemFont(ofSize: 12, weight: .medium), .foregroundColor: OverlayLabelStyle.secondaryForeground]
+        [.font: NSFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: OverlayLabelStyle.secondaryForeground]
     }
 
     private func toleranceBadgeWidth(_ text: String) -> CGFloat {
