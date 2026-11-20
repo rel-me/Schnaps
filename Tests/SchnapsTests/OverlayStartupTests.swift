@@ -60,10 +60,17 @@ struct OverlayStartupTests {
         #expect(await finishes.next() == 0)
         #expect(controller.windows.allSatisfy { ($0.contentView as? MeasurementView)?.captureSnapshot == nil })
         #expect(controller.windows.allSatisfy { !$0.canBecomeKey })
+        let window = try #require(controller.windows.first { $0.screen == screen })
+        let view = try #require(window.contentView as? MeasurementView)
+        let point = view.convert(CGPoint(x: 100, y: 100), to: nil)
+        let moveBeforeCapture = try #require(NSEvent.mouseEvent(with: .mouseMoved, location: point,
+            modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil,
+            eventNumber: 0, clickCount: 0, pressure: 0))
+        view.mouseMoved(with: moveBeforeCapture)
         gates[1].resume()
         #expect(await finishes.next() == 1)
-        let view = try #require(controller.windows.first { $0.screen == screen }?.contentView as? MeasurementView)
         #expect(view.captureSnapshot != nil)
+        #expect(view.labelControls().isEmpty)
         #expect(controller.windows.allSatisfy { $0.canBecomeKey && $0.canBecomeMain })
     }
 
@@ -217,7 +224,7 @@ struct OverlayStartupTests {
         let panel = NSPanel(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
         panel.isReleasedWhenClosed = false
         defer { panel.close() }
-        let view = MeasurementView(frame: frame, scale: 1, snapshot: nil, mode: .findDimensions)
+        let view = MeasurementView(frame: frame, scale: 2, snapshot: nil, mode: .findDimensions)
         panel.contentView = view
         let start = CGPoint(x: 100, y: 100)
         let moved = CGPoint(x: 120, y: 110)
@@ -230,6 +237,8 @@ struct OverlayStartupTests {
         view.initializePointer(at: panel.convertPoint(toScreen: view.convert(start, to: nil)))
         view.mouseMoved(with: try mouse(.mouseMoved, at: start))
         view.updateSnapshot(try testSnapshot())
+        #expect(view.labelControls().isEmpty)
+        view.mouseMoved(with: try mouse(.mouseMoved, at: CGPoint(x: start.x + 0.25, y: start.y)))
         #expect(view.labelControls().isEmpty)
 
         let enter = try #require(NSEvent.enterExitEvent(with: .mouseEntered,
@@ -246,6 +255,13 @@ struct OverlayStartupTests {
 
         view.mouseMoved(with: try mouse(.mouseMoved, at: moved))
         #expect(view.labelControls().first?.target == .live)
+
+        // Installing the frozen frame and taking focus resets the hover reading.
+        view.initializePointer(at: panel.convertPoint(toScreen: view.convert(moved, to: nil)))
+        view.mouseMoved(with: try mouse(.mouseMoved, at: moved))
+        #expect(view.labelControls().isEmpty)
+
+        // A deliberate click can still hold the reading at the startup location.
         view.mouseDown(with: try mouse(.leftMouseDown, at: moved))
         view.mouseUp(with: try mouse(.leftMouseUp, at: moved))
         #expect(view.labelControls().first?.target == .held)
@@ -349,7 +365,7 @@ struct OverlayStartupTests {
         #expect(controller.windows.allSatisfy { $0.canBecomeKey && $0.canBecomeMain })
     }
 
-    @Test func areaBorderKeepsOverlayColorAcrossBackgroundsAndHonorsExplicitColorSwitch() throws {
+    @Test func measurementsKeepOverlayColorAcrossBackgroundsAndHonorExplicitColorSwitch() throws {
         let defaults = UserDefaults.standard
         let previousContrast = defaults.object(forKey: PreferenceKey.autoContrast)
         defaults.set(true, forKey: PreferenceKey.autoContrast)
@@ -370,14 +386,14 @@ struct OverlayStartupTests {
                 let snapshot = ScreenSnapshot(image: image, pixels: try #require(PixelBuffer(image: image)), scaleX: 1, scaleY: 1)
                 let view = MeasurementView(frame: CGRect(x: 0, y: 0, width: 200, height: 200), scale: 1,
                                            snapshot: snapshot, mode: mode)
-                #expect(view.areaMeasurementColor.schnapsHex == primary.schnapsHex)
+                #expect(view.measurementColor.schnapsHex == primary.schnapsHex)
                 let toggle = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
                                                           timestamp: 0, windowNumber: 0, context: nil,
                                                           characters: "x", charactersIgnoringModifiers: "x", isARepeat: false, keyCode: 7))
                 view.keyDown(with: toggle)
-                #expect(view.areaMeasurementColor.schnapsHex == alternative.schnapsHex)
+                #expect(view.measurementColor.schnapsHex == alternative.schnapsHex)
                 view.keyDown(with: toggle)
-                #expect(view.areaMeasurementColor.schnapsHex == primary.schnapsHex)
+                #expect(view.measurementColor.schnapsHex == primary.schnapsHex)
             }
         }
     }
