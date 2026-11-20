@@ -366,18 +366,23 @@ final class MeasurementView: NSView {
     override func mouseEntered(with event: NSEvent) {
         window?.makeKey()
         window?.makeFirstResponder(self)
-        mouseMoved(with: event)
+        // Opening or focusing the panel can send an enter event without pointer movement.
+        updatePointer(at: convert(event.locationInWindow, from: nil))
     }
     override func mouseExited(with event: NSEvent) {
         pointerIsInside = false
-        initialPointer = nil
         liveDimensions = nil
         needsDisplay = true
     }
     override func mouseMoved(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if point != initialPointer { initialPointer = nil }
+        updatePointer(at: point)
+    }
+
+    private func updatePointer(at point: CGPoint) {
         pointerIsInside = true
-        cursor = convert(event.locationInWindow, from: nil)
-        if cursor != initialPointer { initialPointer = nil }
+        cursor = point
         if let interaction = interactionCursor(at: cursor) { interaction.set() }
         else if UserDefaults.standard.bool(forKey: PreferenceKey.showCursor) { NSCursor.crosshair.set() }
         else { NSCursor(image: NSImage(size: NSSize(width: 16, height: 16), flipped: false) { _ in true }, hotSpot: .zero).set() }
@@ -825,13 +830,13 @@ final class MeasurementView: NSView {
             accessibility += ", " + toleranceTitle
         }
         setAccessibilityValue(accessibility)
+        // Erase previous marks even when the frozen frame has translucent pixels.
+        // Keep the canvas hit-testable before and after capture.
+        NSColor.black.withAlphaComponent(0.01).setFill()
+        dirtyRect.fill(using: .copy)
         if let frozenImage, UserDefaults.standard.bool(forKey: PreferenceKey.freezeScreen) {
             frozenImage.draw(in: bounds, from: .zero,
                 operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
-        } else {
-            // Replace the previous drawing while keeping the canvas hit-testable.
-            NSColor.black.withAlphaComponent(0.01).setFill()
-            dirtyRect.fill(using: .copy)
         }
         for guide in guides {
             line(from: guide.vertical ? CGPoint(x: guide.position, y: 0) : CGPoint(x: 0, y: guide.position),

@@ -232,6 +232,12 @@ struct OverlayStartupTests {
         view.updateSnapshot(try testSnapshot())
         #expect(view.labelControls().isEmpty)
 
+        let enter = try #require(NSEvent.enterExitEvent(with: .mouseEntered,
+            location: view.convert(moved, to: nil), modifierFlags: [], timestamp: 0,
+            windowNumber: panel.windowNumber, context: nil, eventNumber: 0, trackingNumber: 0, userData: nil))
+        view.mouseEntered(with: enter)
+        #expect(view.labelControls().isEmpty)
+
         view.mouseUp(with: try mouse(.leftMouseUp, at: start))
         view.mouseDragged(with: try mouse(.leftMouseDragged, at: moved))
         #expect(view.heldDimensions == nil)
@@ -243,6 +249,47 @@ struct OverlayStartupTests {
         view.mouseDown(with: try mouse(.leftMouseDown, at: moved))
         view.mouseUp(with: try mouse(.leftMouseUp, at: moved))
         #expect(view.labelControls().first?.target == .held)
+    }
+
+    @Test func frozenOverlayRedrawErasesPreviousMeasurement() throws {
+        let frame = CGRect(x: 0, y: 0, width: 200, height: 200)
+        let defaults = UserDefaults.standard
+        let previousFreeze = defaults.object(forKey: PreferenceKey.freezeScreen)
+        defaults.set(true, forKey: PreferenceKey.freezeScreen)
+        defer {
+            if let previousFreeze { defaults.set(previousFreeze, forKey: PreferenceKey.freezeScreen) }
+            else { defaults.removeObject(forKey: PreferenceKey.freezeScreen) }
+        }
+        let context = try #require(CGContext(data: nil, width: 200, height: 200, bitsPerComponent: 8,
+            bytesPerRow: 800, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(NSColor.black.withAlphaComponent(0.5).cgColor)
+        context.fill(frame)
+        let image = try #require(context.makeImage())
+        let snapshot = ScreenSnapshot(image: image, pixels: try #require(PixelBuffer(image: image)), scaleX: 1, scaleY: 1)
+        let view = MeasurementView(frame: frame, scale: 1, snapshot: snapshot, mode: .findDimensions)
+        let event = try #require(NSEvent.mouseEvent(with: .mouseMoved, location: CGPoint(x: 100, y: 100),
+            modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 0, pressure: 0))
+
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        context.translateBy(x: 0, y: frame.height)
+        context.scaleBy(x: 1, y: -1)
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+        let pixels = try #require(context.data)
+        func renderedPixels() -> Data { Data(bytes: pixels, count: context.bytesPerRow * context.height) }
+
+        view.draw(frame)
+        let background = renderedPixels()
+        view.mouseMoved(with: event)
+        #expect(view.labelControls().first?.target == .live)
+        view.draw(frame)
+        let drewMeasurement = renderedPixels() != background
+        #expect(drewMeasurement)
+        view.mouseExited(with: event)
+        view.draw(frame)
+        let restoredBackground = renderedPixels() == background
+        #expect(restoredBackground)
     }
 
     @Test func measurementLabelDrawsWhiteTextInADarkCapsule() throws {
