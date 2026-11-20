@@ -58,10 +58,14 @@ struct ScreenSnapshot: Sendable {
             $0.isVisible && $0.identifier == settingsWindowIdentifier
         }.map { CGWindowID($0.windowNumber) }
         let capturableIDs = PreviewWindowRole.capturableIDs.union(settingsIDs)
+        let processID = ProcessInfo.processInfo.processIdentifier
         let ownWindows = content.windows.filter {
-            $0.owningApplication?.processID == ProcessInfo.processInfo.processIdentifier
-                && !capturableIDs.contains($0.windowID)
+            $0.owningApplication?.processID == processID
         }
+        // Exclude the app so overlays opened during capture are covered even if window enumeration missed them.
+        let ownApplication = content.applications.first { $0.processID == processID }
+            ?? ownWindows.first?.owningApplication
+        let exceptions = ownWindows.filter { capturableIDs.contains($0.windowID) }
         var snapshots: [CGDirectDisplayID: ScreenSnapshot] = [:]
         for screen in NSScreen.screens {
             guard let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value,
@@ -71,7 +75,8 @@ struct ScreenSnapshot: Sendable {
             config.height = Int(screen.frame.height * screen.backingScaleFactor)
             config.showsCursor = false
             config.captureResolution = .best
-            let filter = SCContentFilter(display: display, excludingWindows: ownWindows)
+            let filter = SCContentFilter(display: display, excludingApplications: ownApplication.map { [$0] } ?? [],
+                                         exceptingWindows: exceptions)
             try Task.checkCancellation()
             let logicalSize = screen.frame.size
             let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)

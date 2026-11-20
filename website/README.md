@@ -16,7 +16,7 @@ The homepage animation renders the editorial drawing through the app’s unmodif
 
 Run `swift Scripts/render-native-hover.swift` to regenerate all seven source frames. Then run `swift Scripts/export-drawing-demo.swift` to encode them using `website/media-source/drawing-frames/timeline.json`. The exporter only clears the edge-connected backdrop and encodes WebP; it does not draw measurement UI. The transparent animation and Find Dimensions poster remain 880 × 1040 px, displayed at no more than 400 CSS pixels wide. Pause/play, reduced-motion still behavior, and a no-JavaScript poster remain available. WebP tools (`img2webp`, `cwebp`) are installed by `mise install`; activate mise or run exporters with `mise exec -- swift …`.
 
-The clean drawing is `Assets/Previews/Schnaps-Drawing-Subject.png`, generated with `swift Scripts/export-illustrated-demo.swift --subject-only`. Earlier Calculator captures remain in `media-source/demo-frames/` as design sources for existing product media exports.
+The clean drawing is `Assets/Previews/Schnaps-Drawing-Subject.png`, generated with `swift Scripts/export-illustrated-demo.swift --subject-only`. `Scripts/export-demo.swift` uses the earlier Calculator captures in `media-source/demo-frames/`.
 
 The logo is the approved transparent liquid-glass bottle in `Assets/Artwork/Schnaps-Liquid-Glass.png`. `swift Scripts/export-icon.swift` updates the website PNG, transparent favicon, and app icon together.
 
