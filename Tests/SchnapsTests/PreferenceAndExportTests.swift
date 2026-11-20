@@ -9,6 +9,8 @@ import Testing
     let defaults = UserDefaults(suiteName: name)!
     defer { defaults.removePersistentDomain(forName: name) }
     defaults.register(defaults: MeasurementPreferences.defaults)
+    #expect(MeasurementPreferences.selectedTolerance(in: defaults) == .low)
+    defaults.set(18, forKey: PreferenceKey.tolerance)
     #expect(MeasurementPreferences.selectedTolerance(in: defaults) == .medium)
     defaults.set(18, forKey: PreferenceKey.selectedTolerance)
     #expect(MeasurementPreferences.selectedTolerance(in: defaults) == .medium)
@@ -23,6 +25,10 @@ import Testing
     defaults.set(500, forKey: PreferenceKey.toleranceHigh)
     #expect(MeasurementPreferences.threshold(.zero, in: defaults) == 0)
     #expect(MeasurementPreferences.threshold(.high, in: defaults) == 100)
+    MeasurementPreferences.selectTolerance(.high, in: defaults)
+    MeasurementPreferences.resetTolerance(in: defaults)
+    #expect(MeasurementPreferences.selectedTolerance(in: defaults) == .low)
+    #expect(defaults.integer(forKey: PreferenceKey.tolerance) == TolerancePreset.low.defaultThreshold)
 }
 
 @MainActor @Test func screenshotExportPreservesCropPixelsAndSupportsRetinaScaling() throws {

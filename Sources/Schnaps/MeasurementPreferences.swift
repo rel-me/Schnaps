@@ -21,8 +21,10 @@ enum ToleranceScrollSensitivity: String, CaseIterable {
 
 @MainActor
 enum MeasurementPreferences {
+    static let defaultTolerance: TolerancePreset = .low
+
     static let defaults: [String: Any] = [
-        PreferenceKey.unit: "pt", PreferenceKey.roundPoints: true, PreferenceKey.tolerance: TolerancePreset.medium.rawValue,
+        PreferenceKey.unit: "pt", PreferenceKey.roundPoints: true, PreferenceKey.tolerance: defaultTolerance.rawValue,
         PreferenceKey.showInDock: false, PreferenceKey.showMenuBar: true, PreferenceKey.showAllMenuBarTools: false,
         PreferenceKey.toleranceScrollSensitivity: ToleranceScrollSensitivity.defaultValue.rawValue,
         PreferenceKey.defaultTool: MeasurementMode.findDimensions.rawValue,
@@ -69,6 +71,7 @@ enum MeasurementPreferences {
         {
             return value
         }
+        guard d.object(forKey: PreferenceKey.tolerance) != nil else { return defaultTolerance }
         return TolerancePreset.closest(to: d.integer(forKey: PreferenceKey.tolerance))
     }
     static func threshold(_ preset: TolerancePreset, in d: UserDefaults = .standard) -> Int {
@@ -84,12 +87,12 @@ enum MeasurementPreferences {
         d.set(preset.rawValue, forKey: PreferenceKey.selectedTolerance)
         d.set(threshold(preset, in: d), forKey: PreferenceKey.tolerance)
     }
-    static func resetTolerance() {
+    static func resetTolerance(in d: UserDefaults = .standard) {
         for preset in TolerancePreset.allCases {
-            UserDefaults.standard.removeObject(forKey: toleranceKey(preset))
+            d.removeObject(forKey: toleranceKey(preset))
         }
-        UserDefaults.standard.removeObject(forKey: PreferenceKey.toleranceScrollSensitivity)
-        selectTolerance(.medium)
+        d.removeObject(forKey: PreferenceKey.toleranceScrollSensitivity)
+        selectTolerance(defaultTolerance, in: d)
     }
     static func resetAppearance() {
         for key in [

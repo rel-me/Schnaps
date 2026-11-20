@@ -83,7 +83,7 @@ struct SettingsView: View {
     @State private var settingsError: String?
     @State private var manualScreenshotPadding = 0
     @AppStorage(PreferenceKey.unit) private var unit = MeasurementUnit.points.rawValue
-    @AppStorage(PreferenceKey.tolerance) private var tolerance = TolerancePreset.medium.rawValue
+    @AppStorage(PreferenceKey.tolerance) private var tolerance = MeasurementPreferences.defaultTolerance.rawValue
     @AppStorage(PreferenceKey.toleranceScrollSensitivity)
     private var toleranceScrollSensitivity = ToleranceScrollSensitivity.defaultValue
     @AppStorage(PreferenceKey.defaultTool) private var defaultTool = MeasurementMode.findDimensions.rawValue
@@ -115,7 +115,8 @@ struct SettingsView: View {
     @AppStorage(PreferenceKey.alternativeColor) private var alternativeColor: String = "252525FF"
     @AppStorage(PreferenceKey.guideColor) private var guideColor: String = "0A84FFFF"
     @AppStorage(PreferenceKey.autoContrast) private var autoContrast: Bool = true
-    @AppStorage(PreferenceKey.selectedTolerance) private var selectedTolerance: Int = TolerancePreset.medium.rawValue
+    @AppStorage(PreferenceKey.selectedTolerance)
+    private var selectedTolerance = MeasurementPreferences.defaultTolerance.rawValue
     @AppStorage(PreferenceKey.toleranceZero) private var zero = TolerancePreset.zero.defaultThreshold
     @AppStorage(PreferenceKey.toleranceLow) private var low = TolerancePreset.low.defaultThreshold
     @AppStorage(PreferenceKey.toleranceMedium) private var medium = TolerancePreset.medium.defaultThreshold
@@ -350,7 +351,8 @@ struct SettingsView: View {
         .accessibilityElement(children: .contain)
     }
     private func syncTolerance() {
-        MeasurementPreferences.selectTolerance(TolerancePreset(rawValue: selectedTolerance) ?? .medium)
+        MeasurementPreferences.selectTolerance(
+            TolerancePreset(rawValue: selectedTolerance) ?? MeasurementPreferences.defaultTolerance)
     }
     private func chooseScreenshotFolder() {
         let panel=NSOpenPanel(); panel.canChooseDirectories=true; panel.canChooseFiles=false
