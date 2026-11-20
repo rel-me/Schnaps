@@ -13,7 +13,7 @@ enum ToleranceScrollSensitivity: String, CaseIterable {
         switch self {
         case .off: nil
         case .low: precise ? 80 : 3
-        case .medium: precise ? 24 : 1.5
+        case .medium: precise ? 24 : 2
         case .high: precise ? 16 : 1
         }
     }

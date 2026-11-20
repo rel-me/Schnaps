@@ -678,19 +678,20 @@ final class MeasurementView: NSView {
         }
         guard event.momentumPhase.isEmpty else { return }
         let phase = event.phase
-        if !phase.isEmpty, phase != .changed {
+        if precise, !phase.isEmpty, phase != .changed {
             toleranceScroll = nil
         }
         guard phase != .ended, phase != .cancelled, phase != .mayBegin else { return }
 
         let delta = event.scrollingDeltaY
         guard abs(delta) > abs(event.scrollingDeltaX) else { return }
-        // Mouse wheels and some precise devices don't report gesture boundaries.
-        let unphasedTimestamp = phase.isEmpty ? event.timestamp : nil
-        var movement = delta
+        // A discrete wheel event counts once even if macOS accelerates its delta.
+        let unphasedTimestamp = precise && phase.isEmpty ? event.timestamp : nil
+        var movement = precise ? delta : (delta < 0 ? -1 : 1)
         if let previous = toleranceScroll, previous.distance == distance,
            (previous.unphasedTimestamp == nil) == (unphasedTimestamp == nil),
-           event.timestamp - (previous.unphasedTimestamp ?? event.timestamp) <= 0.4 {
+           event.timestamp - (previous.unphasedTimestamp ?? event.timestamp) <= 0.4,
+           precise || previous.movement.sign == movement.sign {
             movement += previous.movement
         }
         guard abs(movement) >= distance else {
@@ -698,11 +699,6 @@ final class MeasurementView: NSView {
             return
         }
         toleranceScroll = nil
-        // Keep partial progress from small wheel ticks and discard excess from accelerated events.
-        if !precise, abs(delta) < distance {
-            let remainder = movement.truncatingRemainder(dividingBy: distance)
-            toleranceScroll = (remainder, unphasedTimestamp, distance)
-        }
         // One event advances at most one preset.
         let current = MeasurementPreferences.selectedTolerance
         let preset = current.stepped(by: movement < 0 ? -1 : 1)
