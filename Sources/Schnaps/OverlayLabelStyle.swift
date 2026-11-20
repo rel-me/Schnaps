@@ -4,7 +4,7 @@ import AppKit
 enum OverlayLabelStyle {
     static let height: CGFloat = 28
     static let horizontalPadding: CGFloat = 11
-    static let font = NSFont.monospacedDigitSystemFont(ofSize: 15, weight: .semibold)
+    static let font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
     static let foreground = NSColor.white
     static let secondaryForeground = NSColor(srgbRed: 0.85, green: 0.85, blue: 0.85, alpha: 1)
 
