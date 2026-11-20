@@ -684,8 +684,9 @@ final class MeasurementView: NSView {
 
         let delta = event.scrollingDeltaY
         guard abs(delta) > abs(event.scrollingDeltaX) else { return }
+        let precise = event.hasPreciseScrollingDeltas
         let sensitivity = MeasurementPreferences.toleranceScrollSensitivity
-        let distance = sensitivity.scrollDistance(precise: event.hasPreciseScrollingDeltas)
+        let distance = sensitivity.scrollDistance(precise: precise)
         // Mouse wheels and some precise devices don't report gesture boundaries.
         let unphasedTimestamp = phase.isEmpty ? event.timestamp : nil
         var movement = delta
@@ -694,10 +695,17 @@ final class MeasurementView: NSView {
            event.timestamp - (previous.unphasedTimestamp ?? event.timestamp) <= 0.4 {
             movement += previous.movement
         }
-        let shouldStep = abs(movement) >= distance
-        toleranceScroll = shouldStep ? nil : (movement, unphasedTimestamp, distance)
-        guard shouldStep else { return }
-        // Wheel deltas can be accelerated. One event advances at most one preset.
+        guard abs(movement) >= distance else {
+            toleranceScroll = (movement, unphasedTimestamp, distance)
+            return
+        }
+        toleranceScroll = nil
+        // Keep partial progress from small wheel ticks and discard excess from accelerated events.
+        if !precise, abs(delta) < distance {
+            let remainder = movement.truncatingRemainder(dividingBy: distance)
+            toleranceScroll = (remainder, unphasedTimestamp, distance)
+        }
+        // One event advances at most one preset.
         let current = MeasurementPreferences.selectedTolerance
         let preset = current.stepped(by: movement < 0 ? -1 : 1)
         guard preset != current else { return }

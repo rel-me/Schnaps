@@ -11,7 +11,7 @@ enum ToleranceScrollSensitivity: String, CaseIterable {
     func scrollDistance(precise: Bool) -> CGFloat {
         switch self {
         case .low: precise ? 80 : 3
-        case .medium: precise ? 48 : 2
+        case .medium: precise ? 24 : 1.5
         case .high: precise ? 16 : 1
         }
     }
