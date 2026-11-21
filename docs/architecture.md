@@ -4,7 +4,7 @@
 
 `Sources/Schnaps/App.swift` starts AppKit as a menu-bar utility, registers Carbon global hotkeys, and owns native settings and measurement windows. The settings view uses SwiftUI `NavigationSplitView`, a sidebar list, grouped forms, and system controls. About is the final settings pane, with version information and native update controls. Sparkle preferences are observed directly so changes in update dialogs stay in sync. Sparkle's `SPUStandardUpdaterController` owns update checking, UI, and installation.
 
-`OverlayController` gives each activation one session that owns its windows and initial, live, and export captures. Closing the session cancels its tasks and detaches the canvases. Each capture verifies its session before applying a result. Windows accept pointer input immediately and hold off drawing marks until the initial scan completes. Switching tools clears transient readings and restores only the destination tool’s pins. Pins are held in memory for each tool and display. Activating the same tool toggles it off, and display topology changes close the session.
+`OverlayController` gives each activation one session that owns its windows and initial, live, and export captures. Closing the session cancels its tasks and detaches the canvases. Each capture verifies its session before applying a result. Windows accept pointer input immediately and hold off drawing marks until the initial scan completes. Both the global shortcuts and S switch tools within the current session and reuse its capture. Switching clears transient readings and restores the destination tool’s pins. Pins are held in memory for each tool and display. Activating the same tool toggles it off, and display topology changes close the session.
 
 ## Capture and coordinates
 
