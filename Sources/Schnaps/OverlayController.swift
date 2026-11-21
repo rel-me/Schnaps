@@ -67,8 +67,13 @@ final class OverlayController: NSObject {
     }
 
     func toggle(mode: MeasurementMode = .area) {
-        if session?.mode == mode {
-            stop()
+        if let session {
+            if session.mode == mode { stop() }
+            else {
+                // Reuse the original capture. A new one can pick up pixels from
+                // the departing tool while WindowServer is removing its windows.
+                switchMode(to: mode, in: session)
+            }
             return
         }
         restart(mode: mode)

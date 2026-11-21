@@ -19,7 +19,9 @@ extension OverlayStartupTests {
         var captured = captures.stream.makeAsyncIterator()
         let exports = AsyncStream<CGRect>.makeStream()
         var exported = exports.stream.makeAsyncIterator()
+        var captureCount = 0
         let controller = OverlayController(captureScreens: {
+            captureCount += 1
             captures.continuation.yield(())
             return [displayID: snapshot]
         }, canCapture: { true }, exportScreenshot: { _, region, copy, _ in
@@ -44,10 +46,9 @@ extension OverlayStartupTests {
                 try sendKey("s", code: 1, to: dimensionsWindow)
             } else {
                 controller.toggle(mode: .area)
-                _ = await captured.next()
-                #expect(dimensionsWindow.contentView == nil)
             }
             let areaWindow = try #require(controller.windows.first { $0.displayID == displayID })
+            #expect(areaWindow === dimensionsWindow)
             #expect(areaWindow.measurementView.mode == .area)
             #expect(areaWindow.measurementView.labelControls().isEmpty)
             try drawArea(region, in: areaWindow)
@@ -55,6 +56,7 @@ extension OverlayStartupTests {
             try sendKey("c", code: 8, to: areaWindow)
             #expect(await exported.next() == region)
             if !freeze { _ = await captured.next() }
+            #expect(captureCount == (iteration + 1) * (freeze ? 1 : 2))
             #expect(!controller.isActive)
             #expect(!areaWindow.isVisible && areaWindow.contentView == nil)
             #expect(areaWindow.measurementView.captureSnapshot == nil)
@@ -249,7 +251,6 @@ extension OverlayStartupTests {
                 DimensionSpan(start: CGPoint(x: 150, y: 85), end: CGPoint(x: 150, y: 200))
             ]
             old.displayIfNeeded()
-            let oldID = old.windowNumber
             if iteration == 0 {
                 let visible = try await ScreenSnapshot.capture()
                 let marked = try #require(visible[displayID])
@@ -257,8 +258,8 @@ extension OverlayStartupTests {
             }
 
             controller.toggle(mode: .area)
-            _ = await captured.next()
             let area = try #require(controller.windows.first { $0.displayID == displayID })
+            #expect(area === old)
             try #require(area.measurementView.captureSnapshot != nil)
             try drawArea(sample, in: area)
             area.displayIfNeeded()
@@ -269,7 +270,7 @@ extension OverlayStartupTests {
 
             let onscreen = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]]
             let visibleIDs = try #require(onscreen).compactMap { $0[kCGWindowNumber as String] as? Int }
-            #expect(!visibleIDs.contains(oldID) && !visibleIDs.contains(areaID))
+            #expect(!visibleIDs.contains(areaID))
             let desktop = try await ScreenSnapshot.capture()
             let dismissed = try #require(desktop[displayID])
             #expect(try sceneIsClean(dismissed, region: sample))
