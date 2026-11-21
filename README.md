@@ -51,7 +51,7 @@ Activation shows only the measurement canvas, without a toolbar, permanent hint 
 
 Global shortcuts can be changed or cleared in **Settings → Shortcuts**, with conflict detection and a restore-defaults button. In-tool keys remain fixed.
 
-Settings include customizable tolerance presets, clipboard formats, Retina scaling, aspect ratios, snapping, live/frozen capture, screenshot export, login items, and appearance. See [measurement preferences](docs/preferences.md) for details. Each display uses its own scale and measurement canvas. Pinned measurements survive toggling the overlay during the current session; they are not saved to disk.
+Settings include customizable tolerance presets, clipboard formats, Retina scaling, aspect ratios, snapping, live/frozen capture, screenshot export, login items, and appearance. See [measurement preferences](docs/preferences.md) for details. Each display uses its own scale and measurement canvas. The overlay keeps pins in memory for each tool and display while the app runs.
 
 Detection uses color contrast, so solid UI surfaces work best. Gradients, shadows, text, and photos can yield partial or broad measurements. Manual selection is always available. CSS clipboard output uses logical screen coordinates.
 
