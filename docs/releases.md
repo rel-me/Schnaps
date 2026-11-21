@@ -27,6 +27,8 @@ swift Scripts/release.swift
 
 The release script builds a universal app, signs nested Sparkle code from the inside out with hardened runtime and secure timestamps, verifies the app, notarizes and staples it, and checks Gatekeeper assessment. It creates a compressed DMG with the app and Applications symlink, signs/notarizes/staples the DMG, and verifies the disk image. It then generates and validates the signed Sparkle appcast and archive signatures, a stable download alias, and SHA-256 checksums.
 
+If DMG signing reports a missing secure timestamp or an unavailable timestamp service, the packager retries signing twice. If all attempts fail, check that the release Mac can reach `timestamp.apple.com` and rerun the original command. The DMG must be signed with a secure timestamp before it is submitted for notarization.
+
 Outputs are under `build/releases/<version>/`. Notarization reports stay there for inspection; do not publish those operational reports. Keep Sparkle signing keys, Developer ID private keys, and notarization credentials outside source control.
 
 The build script retains symlinks and executable permissions when embedding `Sparkle.framework`, and includes its license acknowledgment. It never uses `codesign --deep` to produce signatures; `--deep --strict` is used only for verification.
