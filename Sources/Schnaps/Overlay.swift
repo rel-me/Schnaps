@@ -74,8 +74,6 @@ final class OverlayController: NSObject {
             windows.append(window)
         }
         if !freeze { focusWindows(activate: false) }
-        // Present the canvas before ScreenCaptureKit enumerates and captures displays.
-        // The capture filter excludes our overlays, so they never enter the snapshot.
         captureTask = Task { [weak self] in
             guard let self else { return }
             // Activating or taking key focus can dismiss another app's dropdown.

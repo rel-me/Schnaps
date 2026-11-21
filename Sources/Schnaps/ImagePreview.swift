@@ -44,7 +44,6 @@ final class ImagePreview: NSObject, ObservableObject, NSWindowDelegate {
         contentRect: CGRect(x: 0, y: 0, width: 800, height: 700),
         styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered,
         defer: false)
-      window.identifier = PreviewWindowRole.image
       window.title = "Image & Window Preview"
       window.isReleasedWhenClosed = false
       window.delegate = self

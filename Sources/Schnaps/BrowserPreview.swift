@@ -7,6 +7,7 @@ import WebKit
 @MainActor
 final class BrowserPreview: NSObject, ObservableObject, WKNavigationDelegate {
   static let shared = BrowserPreview()
+  static let windowIdentifier = NSUserInterfaceItemIdentifier("SchnapsBrowserPreview")
   let webView: WKWebView
   @Published var address = ""
   @Published var width = 960.0
@@ -30,7 +31,7 @@ final class BrowserPreview: NSObject, ObservableObject, WKNavigationDelegate {
         contentRect: CGRect(x: 0, y: 0, width: 1060, height: 760),
         styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered,
         defer: false)
-      window.identifier = PreviewWindowRole.browser
+      window.identifier = Self.windowIdentifier
       window.title = "Responsive Preview"
       window.isReleasedWhenClosed = false
       window.contentView = NSHostingView(rootView: BrowserPreviewView(model: self))
