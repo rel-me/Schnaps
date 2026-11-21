@@ -53,6 +53,9 @@ struct OverlayStartupTests {
         #expect(controller.windows.allSatisfy { !$0.canBecomeKey && !$0.canBecomeMain })
         #expect(gates.isEmpty) // Presentation is synchronous; capture has not even started.
         #expect(await starts.next() == 0)
+        let firstView = try #require(controller.windows.first { $0.screen == screen }?.contentView as? MeasurementView)
+        let distance = DimensionSpan(start: CGPoint(x: 40, y: 20), end: CGPoint(x: 40, y: 180))
+        firstView.pinnedDistances = [distance]
         controller.stop()
         controller.toggle(mode: .findDimensions)
         #expect(await starts.next() == 1)
@@ -62,6 +65,22 @@ struct OverlayStartupTests {
         #expect(controller.windows.allSatisfy { !$0.canBecomeKey })
         let window = try #require(controller.windows.first { $0.screen == screen })
         let view = try #require(window.contentView as? MeasurementView)
+        #expect(view.pinnedDistances == [distance])
+        let context = try #require(CGContext(data: nil, width: 200, height: 200, bitsPerComponent: 8,
+            bytesPerRow: 800, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        let pixels = try #require(context.data)
+        func renderStartupRegion() -> Data {
+            NSGraphicsContext.saveGraphicsState()
+            defer { NSGraphicsContext.restoreGraphicsState() }
+            NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+            view.draw(CGRect(x: 0, y: 0, width: 200, height: 200))
+            return Data(bytes: pixels, count: context.height * context.bytesPerRow)
+        }
+        let pendingWithPin = renderStartupRegion()
+        view.pinnedDistances = []
+        #expect(renderStartupRegion() == pendingWithPin)
+        view.pinnedDistances = [distance]
         let point = view.convert(CGPoint(x: 100, y: 100), to: nil)
         let moveBeforeCapture = try #require(NSEvent.mouseEvent(with: .mouseMoved, location: point,
             modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil,
@@ -70,6 +89,9 @@ struct OverlayStartupTests {
         gates[1].resume()
         #expect(await finishes.next() == 1)
         #expect(view.captureSnapshot != nil)
+        let readyWithPin = renderStartupRegion()
+        view.pinnedDistances = []
+        #expect(renderStartupRegion() != readyWithPin)
         #expect(view.labelControls().isEmpty)
         #expect(controller.windows.allSatisfy { $0.canBecomeKey && $0.canBecomeMain })
     }
@@ -458,6 +480,7 @@ struct OverlayStartupTests {
         _ = await attempts.next()
         #expect(!controller.windows.isEmpty)
         #expect(controller.windows.allSatisfy { $0.canBecomeKey && $0.canBecomeMain })
+        #expect(controller.windows.allSatisfy { ($0.contentView as? MeasurementView)?.isAwaitingInitialCapture == false })
     }
 
     @Test func measurementsKeepOverlayColorAcrossBackgroundsAndHonorExplicitColorSwitch() throws {
