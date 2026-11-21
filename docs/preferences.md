@@ -14,7 +14,7 @@ Schnaps keeps its native sidebar settings. General, Screenshots, Tolerance, and 
 
 ## Screenshots
 
-During measurement, C copies the current area or the rectangle formed by the two distance rulers. P saves it. Export uses the frozen image when Freeze screen is on and a fresh screen capture when it is off. Measurement marks visible at capture time can appear in the image. Screen Recording permission is required; denial never prevents manual area measurement.
+During measurement, C copies the current area or the rectangle formed by the two distance rulers. P saves it. Export uses the frozen image when available. For a fresh capture, the measurement canvases briefly hide their marks. Screen Recording permission is required for export. Manual area measurement also works with capture permission denied.
 
 Choose an export folder, PNG/JPEG, native Retina or 1x resolution, and capture sounds. Padding ranges from 0–100 logical points; Auto adds 8% of the shorter side, bounded to 8–64 points. Padding clips at the display edge. Hold Option with C/P to toggle it: configured padding becomes zero; zero becomes Auto.
 

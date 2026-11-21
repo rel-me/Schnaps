@@ -2,240 +2,10 @@ import AppKit
 import MeasurementCore
 
 @MainActor
-final class OverlayController: NSObject {
-    private(set) var windows: [OverlayWindow] = []
-    private var generation = UUID()
-    private var previousApp: NSRunningApplication?
-    private var liveTask: Task<Void, Never>?
-    private var captureTask: Task<Void, Never>?
-    private let captureScreens: @MainActor () async throws -> [CGDirectDisplayID: ScreenSnapshot]
-    private let canCapture: @MainActor () -> Bool
-    private var saved: [CGDirectDisplayID: [CGRect]] = [:]
-    private var savedDistances: [CGDirectDisplayID: [DimensionSpan]] = [:]
-    private var mode: MeasurementMode = .area
-    var onActivationChanged: ((Bool) -> Void)?
-    var onStateChanged: ((MeasurementMode?) -> Void)?
-    var isActive: Bool { !windows.isEmpty }
-
-    init(captureScreens: @escaping @MainActor () async throws -> [CGDirectDisplayID: ScreenSnapshot] = ScreenSnapshot.capture,
-         canCapture: @escaping @MainActor () -> Bool = { ScreenRecordingPermission.shared.granted }) {
-        self.captureScreens = captureScreens
-        self.canCapture = canCapture
-        super.init()
-        NotificationCenter.default.addObserver(self, selector: #selector(preferencesChanged),
-                                               name: UserDefaults.didChangeNotification, object: nil)
-    }
-
-    @objc private func preferencesChanged() {
-        for window in windows { (window.contentView as? MeasurementView)?.synchronizePreferences() }
-    }
-
-    func toggle(mode: MeasurementMode = .area) {
-        if isActive {
-            let sameMode = self.mode == mode
-            stop()
-            if sameMode { return }
-        }
-        self.mode = mode
-        onActivationChanged?(true)
-        onStateChanged?(mode)
-        previousApp = NSWorkspace.shared.frontmostApplication
-        let token = UUID()
-        generation = token
-        let freeze = UserDefaults.standard.bool(forKey: PreferenceKey.freezeScreen)
-        let initialPointer = NSEvent.mouseLocation
-        for screen in NSScreen.screens {
-            let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
-            let window = OverlayWindow(screen: screen, freeze: freeze)
-            let view = MeasurementView(frame: CGRect(origin: .zero, size: screen.frame.size),
-                                       scale: screen.backingScaleFactor, snapshot: nil, mode: mode)
-            view.isAwaitingInitialCapture = true
-            view.pinned = (saved[id] ?? []).map { $0.intersection(view.bounds) }.filter { !$0.isNull && !$0.isEmpty }
-            view.pinnedDistances = savedDistances[id] ?? []
-            view.onModeChanged = { [weak self] mode in
-                guard let self else { return }
-                self.mode = mode
-                for window in self.windows { (window.contentView as? MeasurementView)?.setMode(mode) }
-                self.onStateChanged?(mode)
-            }
-            view.onClear = { [weak self] in self?.clearMeasurements() }
-            view.onClose = { [weak self] in self?.stop() }
-            view.onRefresh = { [weak self, weak view] in
-                guard let view else { return }
-                self?.refresh(mode: view.mode)
-            }
-            view.onCapture = { [weak self, weak view] region, copy, togglePadding in
-                guard let self, let view else { return }
-                self.capture(view: view, displayID: id, region: region, copy: copy, togglePadding: togglePadding)
-            }
-            window.contentView = view
-            view.initializePointer(at: initialPointer)
-            window.makeFirstResponder(view)
-            window.orderFrontRegardless()
-            windows.append(window)
-        }
-        if !freeze { focusWindows(activate: false) }
-        captureTask = Task { [weak self] in
-            guard let self else { return }
-            // Activating or taking key focus can dismiss another app's dropdown.
-            // Keep it intact until its frozen image is installed on every display.
-            defer {
-                if self.generation == token, !Task.isCancelled {
-                    let pointer = NSEvent.mouseLocation
-                    for window in self.windows {
-                        guard let view = window.contentView as? MeasurementView else { continue }
-                        if freeze, view.mode == .findDimensions { view.initializePointer(at: pointer) }
-                        view.isAwaitingInitialCapture = false
-                    }
-                    if freeze { self.focusWindows(activate: true) }
-                }
-            }
-            guard self.canCapture() else { return }
-            do {
-                let snapshots = try await self.captureScreens()
-                guard self.generation == token, !Task.isCancelled else { return }
-                for window in self.windows {
-                    let id = (window.screen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
-                    (window.contentView as? MeasurementView)?.updateSnapshot(snapshots[id])
-                }
-            } catch {
-                guard self.generation == token, !Task.isCancelled else { return }
-                NSLog("Schnaps capture: %@", error.localizedDescription)
-                for window in self.windows {
-                    guard let view = window.contentView as? MeasurementView, view.mode == .findDimensions else { continue }
-                    view.reportCaptureFailure()
-                }
-            }
-            guard self.generation == token, !Task.isCancelled else { return }
-            self.startLiveCapture(token: token)
-        }
-    }
-
-    private func focusWindows(activate: Bool) {
-        for window in windows {
-            window.acceptsMeasurementFocus = true
-            window.displayIfNeeded()
-        }
-        if activate { NSApp.activate(ignoringOtherApps: true) }
-        let target = windows.first { $0.frame.contains(NSEvent.mouseLocation) } ?? windows.first
-        target?.makeKeyAndOrderFront(nil)
-    }
-
-    func stop() {
-        captureTask?.cancel(); captureTask=nil
-        liveTask?.cancel(); liveTask=nil
-        generation = UUID()
-        for window in windows {
-            if let id = (window.screen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value,
-               let view = window.contentView as? MeasurementView {
-                view.areaDetection.cancel()
-                saved[id] = view.pinned
-                savedDistances[id] = view.pinnedDistances
-            }
-            window.orderOut(nil)
-            window.close()
-        }
-        windows.removeAll()
-        onActivationChanged?(false)
-        onStateChanged?(nil)
-        if let previousApp, previousApp.processIdentifier != ProcessInfo.processInfo.processIdentifier {
-            previousApp.activate(options: [])
-        }
-        previousApp = nil
-    }
-
-    private func startLiveCapture(token: UUID) {
-        guard !UserDefaults.standard.bool(forKey: PreferenceKey.freezeScreen), canCapture() else { return }
-        liveTask = Task { [weak self] in
-            while !Task.isCancelled {
-                do { try await Task.sleep(nanoseconds: 250_000_000) } catch { return }
-                guard let self, self.generation == token else { return }
-                guard !UserDefaults.standard.bool(forKey: PreferenceKey.freezeScreen) else { continue }
-                guard self.mode == .findDimensions,
-                      self.windows.contains(where: { ($0.contentView as? MeasurementView)?.wantsLiveSnapshot == true }) else { continue }
-                do {
-                    let frames = try await self.captureScreens()
-                    guard self.generation == token else { return }
-                    for window in self.windows {
-                        let id=(window.screen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
-                        (window.contentView as? MeasurementView)?.updateSnapshot(frames[id])
-                    }
-                } catch { /* Keep the last valid frame during a transient capture failure. */ }
-            }
-        }
-    }
-
-    private func capture(view: MeasurementView, displayID: CGDirectDisplayID, region: CGRect, copy: Bool, togglePadding: Bool) {
-        let frozen = UserDefaults.standard.bool(forKey: PreferenceKey.freezeScreen) ? view.captureSnapshot : nil
-        ScreenRecordingPermission.shared.refresh()
-        guard frozen != nil || ScreenRecordingPermission.shared.granted else {
-            view.reportScreenshotError(ScreenshotExport.ExportError.noCapture.localizedDescription)
-            return
-        }
-        let token = generation
-        Task { [weak self, weak view] in
-            guard let self else { return }
-            do {
-                let image: ScreenSnapshot
-                if let frozen { image=frozen }
-                else {
-                    let frames=try await ScreenSnapshot.capture()
-                    guard let frame=frames[displayID] else { throw ScreenshotExport.ExportError.noCapture }; image=frame
-                }
-                guard self.generation == token else { return }
-                self.stop()
-                _ = try ScreenshotExport.export(snapshot:image,region:region,copy:copy,togglePadding:togglePadding)
-            } catch {
-                if let view, self.isActive { view.reportScreenshotError(error.localizedDescription) }
-                else { let alert=NSAlert(); alert.messageText=L("Screenshot failed"); alert.informativeText=error.localizedDescription; alert.runModal() }
-            }
-        }
-    }
-
-    private func refresh(mode: MeasurementMode) {
-        stop()
-        if mode == .findDimensions {
-            saved.removeAll()
-            savedDistances.removeAll()
-        }
-        toggle(mode: mode)
-    }
-
-    private func clearMeasurements() {
-        saved.removeAll()
-        savedDistances.removeAll()
-        for window in windows { (window.contentView as? MeasurementView)?.clearMeasurements() }
-    }
-}
-
-final class OverlayWindow: NSPanel {
-    var acceptsMeasurementFocus: Bool
-
-    init(screen: NSScreen, freeze: Bool) {
-        acceptsMeasurementFocus = !freeze
-        super.init(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        setFrame(screen.frame, display: true)
-        backgroundColor = .clear
-        isOpaque = false
-        hasShadow = false
-        // Animating a full-display screenshot looks like the desktop itself zooms.
-        animationBehavior = .none
-        isReleasedWhenClosed = false
-        level = .screenSaver
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        acceptsMouseMovedEvents = true
-        isRestorable = false
-        hidesOnDeactivate = false
-    }
-    override var canBecomeKey: Bool { acceptsMeasurementFocus }
-    override var canBecomeMain: Bool { acceptsMeasurementFocus }
-}
-
-@MainActor
 final class MeasurementView: NSView {
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
-    var isAwaitingInitialCapture = false {
+    var isPresentationSuppressed = false {
         didSet { needsDisplay = true }
     }
     var pinned: [CGRect] = [] { didSet { needsDisplay = true } }
@@ -246,6 +16,7 @@ final class MeasurementView: NSView {
     var onModeChanged: ((MeasurementMode) -> Void)?
     var onCapture: ((CGRect, Bool, Bool) -> Void)?
     private let scale: CGFloat
+    private let freeze: Bool
     private var snapshot: ScreenSnapshot?
     private var frozenImage: NSImage?
     private var pointerIsInside = false
@@ -293,6 +64,7 @@ final class MeasurementView: NSView {
     private var tracking: NSTrackingArea?
     private var message: String?
     private var messageTimer: Timer?
+    private var interactionGeneration = UUID()
     private var useAlternativeColor = false
     private var messageAlpha: CGFloat = 1
     private var presentation: MeasurementPresentation {
@@ -323,10 +95,12 @@ final class MeasurementView: NSView {
     }
 
     init(frame: CGRect, scale: CGFloat, snapshot: ScreenSnapshot?, mode: MeasurementMode,
+         freeze: Bool = UserDefaults.standard.bool(forKey: PreferenceKey.freezeScreen),
          areaDetection: AreaDetection = AreaDetection()) {
         self.scale = scale
+        self.freeze = freeze
         self.snapshot = snapshot
-        self.frozenImage = snapshot.map { NSImage(cgImage: $0.image, size: frame.size) }
+        self.frozenImage = freeze ? snapshot.map { NSImage(cgImage: $0.image, size: frame.size) } : nil
         self.areaDetection = areaDetection
         self.mode = mode
         self.unit = MeasurementUnit(rawValue: UserDefaults.standard.string(forKey: PreferenceKey.unit) ?? "pt") ?? .points
@@ -359,7 +133,7 @@ final class MeasurementView: NSView {
         // Always accept the first frame, even if a drag began during capture.
         guard snapshot == nil || (!dragging && heldDimensions == nil && selection == nil) else { return }
         snapshot=value
-        frozenImage = value.map { NSImage(cgImage: $0.image, size: bounds.size) }
+        if freeze { frozenImage = value.map { NSImage(cgImage: $0.image, size: bounds.size) } }
         if detectionRegion != nil { detectSelectedArea() }
         updateLiveDimensions(); needsDisplay=true
     }
@@ -605,9 +379,10 @@ final class MeasurementView: NSView {
         let usesMeasuredArea = [UInt16(36), 76, 49].contains(event.keyCode) || ["c", "p"].contains(character ?? "")
         if areaDetection.isPending && usesMeasuredArea {
             let completion = areaDetection.completionForCurrent()
+            let generation = interactionGeneration
             Task { [weak self] in
-                guard await completion.value else { return }
-                self?.keyDown(with: event)
+                guard await completion.value, let self, self.interactionGeneration == generation else { return }
+                self.keyDown(with: event)
             }
             return
         }
@@ -678,23 +453,15 @@ final class MeasurementView: NSView {
     }
     private func toggleMode() {
         let next: MeasurementMode = mode == .area ? .findDimensions : .area
-        setMode(next)
-        onModeChanged?(next)
+        if let onModeChanged { onModeChanged(next) } else { setMode(next) }
         if mode == .findDimensions && snapshot == nil { reportCaptureFailure() }
         else { flash(mode.rawValue) }
     }
 
     func setMode(_ mode: MeasurementMode) {
         guard self.mode != mode else { return }
-        areaDetection.cancel()
-        detectionRegion = nil
-        toleranceScroll = nil
-        cancelMouseInteraction()
         self.mode = mode
-        heldDimensions = nil
-        if mode == .area { initialPointer = nil }
-        updateLiveDimensions()
-        needsDisplay = true
+        clearMeasurements()
     }
 
     func reportCaptureFailure() {
@@ -781,15 +548,41 @@ final class MeasurementView: NSView {
         flash(horizontal ? "Horizontal distance pinned" : "Vertical distance pinned")
     }
     func clearMeasurements() {
-        areaDetection.cancel()
-        pinned.removeAll(); pinnedDistances.removeAll(); guides.removeAll()
-        detectionRegion = nil
-        selection = nil; heldDimensions = nil
-        cancelMouseInteraction()
-        liveDimensions = nil
-        if mode == .findDimensions { initialPointer = cursor }
+        pinned.removeAll()
+        pinnedDistances.removeAll()
+        resetTransientMeasurements()
         window?.invalidateCursorRects(for: self)
         needsDisplay = true
+    }
+
+    func retire() {
+        clearMeasurements()
+        snapshot = nil
+        frozenImage = nil
+        onClose = nil
+        onRefresh = nil
+        onClear = nil
+        onModeChanged = nil
+        onCapture = nil
+    }
+
+    private func resetTransientMeasurements() {
+        interactionGeneration = UUID()
+        areaDetection.cancel()
+        guides.removeAll()
+        detectionRegion = nil
+        selection = nil
+        heldDimensions = nil
+        original = nil
+        toleranceScroll = nil
+        modifierFlags = []
+        showAlignment = false
+        messageTimer?.invalidate()
+        messageTimer = nil
+        message = nil
+        cancelMouseInteraction()
+        liveDimensions = nil
+        initialPointer = mode == .findDimensions ? cursor : nil
     }
 
     private func cancelMouseInteraction() {
@@ -853,11 +646,10 @@ final class MeasurementView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        // Keep the window hit-testable but leave the screen free of measurement
-        // marks until capture finishes. Anything drawn here can enter the frame.
+        // Replace previously drawn pixels, retaining a hit-testable canvas.
         NSColor.black.withAlphaComponent(0.01).setFill()
         dirtyRect.fill(using: .copy)
-        guard !isAwaitingInitialCapture else { return }
+        guard !isPresentationSuppressed else { return }
 
         let description = selection.map { areaLabelText($0) } ?? (heldDimensions ?? liveDimensions).map {
             findDimensionsLabelText($0.rect)
@@ -867,7 +659,7 @@ final class MeasurementView: NSView {
             accessibility += ", " + toleranceTitle
         }
         setAccessibilityValue(accessibility)
-        if let frozenImage, UserDefaults.standard.bool(forKey: PreferenceKey.freezeScreen) {
+        if let frozenImage {
             frozenImage.draw(in: bounds, from: .zero,
                 operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
         }

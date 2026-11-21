@@ -4,7 +4,7 @@ import Testing
 @testable import Schnaps
 
 @MainActor
-private func testSnapshot(scale: CGFloat = 1) throws -> ScreenSnapshot {
+func testSnapshot(scale: CGFloat = 1) throws -> ScreenSnapshot {
     let context = try #require(CGContext(data: nil, width: 200, height: 200, bitsPerComponent: 8,
                                         bytesPerRow: 800, space: CGColorSpaceCreateDeviceRGB(),
                                         bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
@@ -480,7 +480,7 @@ struct OverlayStartupTests {
         _ = await attempts.next()
         #expect(!controller.windows.isEmpty)
         #expect(controller.windows.allSatisfy { $0.canBecomeKey && $0.canBecomeMain })
-        #expect(controller.windows.allSatisfy { ($0.contentView as? MeasurementView)?.isAwaitingInitialCapture == false })
+        #expect(controller.windows.allSatisfy { ($0.contentView as? MeasurementView)?.isPresentationSuppressed == false })
     }
 
     @Test func measurementsKeepOverlayColorAcrossBackgroundsAndHonorExplicitColorSwitch() throws {

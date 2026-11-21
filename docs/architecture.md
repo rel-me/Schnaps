@@ -4,7 +4,7 @@
 
 `Sources/Schnaps/App.swift` starts AppKit as a menu-bar utility, registers Carbon global hotkeys, and owns native settings and measurement windows. The settings view uses SwiftUI `NavigationSplitView`, a sidebar list, grouped forms, and system controls. About is the final settings pane, with version information and native update controls. Sparkle preferences are observed directly so changes in update dialogs stay in sync. Sparkle's `SPUStandardUpdaterController` owns update checking, UI, and installation.
 
-`OverlayController` creates one borderless window per `NSScreen` and captures displays asynchronously. The windows accept pointer input immediately and defer drawing measurement marks until the initial capture finishes, so restored pins and early drags stay out of the frozen desktop. Starting another tool replaces the current one; activating the same tool toggles it off. A generation token prevents canceled async captures from reopening the overlay. Display topology changes close the overlay safely. Pins are held in memory across overlay toggles. The canvas has no toolbar, persistent instructions, or tint. Only measurement marks and brief action/error feedback are drawn; the canvas exposes its description to accessibility.
+`OverlayController` gives each activation one session that owns its windows and initial, live, and export captures. Closing the session cancels its tasks and detaches the canvases. Each capture verifies its session before applying a result. Windows accept pointer input immediately and hold off drawing marks until the initial scan completes. Switching tools clears transient readings and restores only the destination tool’s pins. Pins are held in memory for each tool and display. Activating the same tool toggles it off, and display topology changes close the session.
 
 ## Capture and coordinates
 
@@ -27,7 +27,7 @@ Detection is contrast-based, not semantic object recognition. Complex imagery an
 
 ## Validation
 
-Swift Testing covers reverse drags, clipping, constrained squares, Retina units, movement bounds, image orientation, channel conversion, tolerance, invalid buffers, gap measurements, one-pixel features, object bounds, disconnected details, and shadow exclusion. Live UI checks used known-size rectangles and gaps on a Retina display to verify capture, snapping, copy output, and independent distance pins.
+Swift Testing covers reverse drags, clipping, constrained squares, Retina units, movement bounds, image orientation, channel conversion, tolerance, invalid buffers, gap measurements, one-pixel features, object bounds, disconnected details, and shadow exclusion. Lifecycle stress tests cover repeated tool switches and copies, stale capture completions, and window cleanup. To run the native check against the WindowServer with Screen Recording permission, run `SCHNAPS_TEST_WINDOW_SERVER=1 swift test --filter windowServerCopyStress`. It draws a ruler over a test window and checks the captured pixels and displayed windows after copy in both freeze modes.
 
 ## Design tools
 
