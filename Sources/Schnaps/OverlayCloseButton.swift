@@ -2,7 +2,7 @@ import AppKit
 
 @MainActor
 enum OverlayCloseButton {
-    static let spacing: CGFloat = 3
+    static let spacing: CGFloat = 1
 
     static func frame(beside label: CGRect) -> CGRect {
         CGRect(x: label.maxX + spacing, y: label.minY, width: label.height, height: label.height)
