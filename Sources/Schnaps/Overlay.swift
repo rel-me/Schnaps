@@ -49,6 +49,7 @@ final class OverlayController: NSObject {
             let window = OverlayWindow(screen: screen, freeze: freeze)
             let view = MeasurementView(frame: CGRect(origin: .zero, size: screen.frame.size),
                                        scale: screen.backingScaleFactor, snapshot: nil, mode: mode)
+            view.isAwaitingInitialCapture = true
             view.pinned = (saved[id] ?? []).map { $0.intersection(view.bounds) }.filter { !$0.isNull && !$0.isEmpty }
             view.pinnedDistances = savedDistances[id] ?? []
             view.onModeChanged = { [weak self] mode in
@@ -79,13 +80,14 @@ final class OverlayController: NSObject {
             // Activating or taking key focus can dismiss another app's dropdown.
             // Keep it intact until its frozen image is installed on every display.
             defer {
-                if freeze, self.generation == token, !Task.isCancelled {
+                if self.generation == token, !Task.isCancelled {
                     let pointer = NSEvent.mouseLocation
                     for window in self.windows {
-                        guard let view = window.contentView as? MeasurementView, view.mode == .findDimensions else { continue }
-                        view.initializePointer(at: pointer)
+                        guard let view = window.contentView as? MeasurementView else { continue }
+                        if freeze, view.mode == .findDimensions { view.initializePointer(at: pointer) }
+                        view.isAwaitingInitialCapture = false
                     }
-                    self.focusWindows(activate: true)
+                    if freeze { self.focusWindows(activate: true) }
                 }
             }
             guard self.canCapture() else { return }
@@ -233,6 +235,9 @@ final class OverlayWindow: NSPanel {
 final class MeasurementView: NSView {
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
+    var isAwaitingInitialCapture = false {
+        didSet { needsDisplay = true }
+    }
     var pinned: [CGRect] = [] { didSet { needsDisplay = true } }
     var pinnedDistances: [DimensionSpan] = [] { didSet { needsDisplay = true } }
     var onClose: (() -> Void)?
@@ -848,6 +853,12 @@ final class MeasurementView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
+        // Keep the window hit-testable but leave the screen free of measurement
+        // marks until capture finishes. Anything drawn here can enter the frame.
+        NSColor.black.withAlphaComponent(0.01).setFill()
+        dirtyRect.fill(using: .copy)
+        guard !isAwaitingInitialCapture else { return }
+
         let description = selection.map { areaLabelText($0) } ?? (heldDimensions ?? liveDimensions).map {
             findDimensionsLabelText($0.rect)
         }
@@ -856,10 +867,6 @@ final class MeasurementView: NSView {
             accessibility += ", " + toleranceTitle
         }
         setAccessibilityValue(accessibility)
-        // Erase previous marks even when the frozen frame has translucent pixels.
-        // Keep the canvas hit-testable before and after capture.
-        NSColor.black.withAlphaComponent(0.01).setFill()
-        dirtyRect.fill(using: .copy)
         if let frozenImage, UserDefaults.standard.bool(forKey: PreferenceKey.freezeScreen) {
             frozenImage.draw(in: bounds, from: .zero,
                 operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
