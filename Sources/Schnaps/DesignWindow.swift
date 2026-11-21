@@ -17,10 +17,12 @@ extension DesignTools {
       do {
         let content = try await SCShareableContent.excludingDesktopWindows(
           true, onScreenWindowsOnly: true)
-        let previews = PreviewWindowRole.sourceIDs
+        let previews = Set(NSApp.windows.filter {
+          $0.isVisible && $0.identifier == BrowserPreview.windowIdentifier
+        }.map(\.windowNumber))
         availableWindows = content.windows.filter {
           ($0.owningApplication?.processID != ProcessInfo.processInfo.processIdentifier
-            || previews.contains($0.windowID))
+            || previews.contains(Int($0.windowID)))
             && $0.windowLayer == 0 && $0.frame.width > 20 && $0.frame.height > 20
         }.map {
           DesignWindow(

@@ -4,39 +4,7 @@ import AppKit
 @preconcurrency import ScreenCaptureKit
 import MeasurementCore
 
-extension NSWindow {
-    var screenCaptureID: CGWindowID? {
-        // AppKit window numbers can fall outside the range of WindowServer IDs.
-        let number = windowNumber
-        guard number > 0 else { return nil }
-        return CGWindowID(exactly: number)
-    }
-}
-
-@MainActor
-enum PreviewWindowRole {
-    static let browser = NSUserInterfaceItemIdentifier("SchnapsBrowserPreview")
-    static let image = NSUserInterfaceItemIdentifier("SchnapsImagePreview")
-
-    static var capturableIDs: Set<CGWindowID> {
-        Set(NSApp.windows.filter { $0.isVisible && ($0.identifier == browser || $0.identifier == image) }
-            .compactMap(\.screenCaptureID))
-    }
-
-    static var sourceIDs: Set<CGWindowID> {
-        Set(NSApp.windows.filter { $0.isVisible && $0.identifier == browser }.compactMap(\.screenCaptureID))
-    }
-}
-
 struct ScreenSnapshot: Sendable {
-    static let settingsWindowIdentifier = NSUserInterfaceItemIdentifier("SchnapsSettings")
-
-    private enum CaptureError: LocalizedError {
-        case overlayExclusionUnavailable
-
-        var errorDescription: String? { "Screen capture could not exclude the measurement overlay." }
-    }
-
     let image: CGImage
     let pixels: PixelBuffer
     let scaleX: CGFloat
@@ -74,35 +42,7 @@ struct ScreenSnapshot: Sendable {
 
     @MainActor
     static func capture() async throws -> [CGDirectDisplayID: ScreenSnapshot] {
-        func measurementOverlayIDs() -> Set<CGWindowID> {
-            Set(NSApp.windows.compactMap { window in
-                guard window.isVisible,
-                      window is OverlayWindow || window is DesignPanel else { return nil }
-                return window.screenCaptureID
-            })
-        }
-        let initialOverlayIDs = measurementOverlayIDs()
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        let overlayIDs = initialOverlayIDs.union(measurementOverlayIDs())
-        // Settings remains part of the frozen desktop, just like preview windows.
-        let settingsIDs = NSApp.windows.filter {
-            $0.isVisible && $0.identifier == settingsWindowIdentifier
-        }.compactMap(\.screenCaptureID)
-        let capturableIDs = PreviewWindowRole.capturableIDs.union(settingsIDs)
-        let processID = ProcessInfo.processInfo.processIdentifier
-        let appWindowIDs = Set(NSApp.windows.compactMap(\.screenCaptureID))
-        let ownWindows = content.windows.filter {
-            $0.owningApplication?.processID == processID || appWindowIDs.contains($0.windowID)
-                || overlayIDs.contains($0.windowID)
-        }
-        // Exclude the app so overlays opened during capture are covered even if window enumeration missed them.
-        let ownApplication = content.applications.first { $0.processID == processID }
-            ?? ownWindows.lazy.compactMap(\.owningApplication).first { $0.processID == processID }
-        let exceptions = ownWindows.filter { capturableIDs.contains($0.windowID) }
-        let excludedWindows = ownWindows.filter { !capturableIDs.contains($0.windowID) }
-        if ownApplication == nil, !overlayIDs.isSubset(of: Set(excludedWindows.map(\.windowID))) {
-            throw CaptureError.overlayExclusionUnavailable
-        }
         var snapshots: [CGDirectDisplayID: ScreenSnapshot] = [:]
         for screen in NSScreen.screens {
             guard let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value,
@@ -112,13 +52,7 @@ struct ScreenSnapshot: Sendable {
             config.height = Int(screen.frame.height * screen.backingScaleFactor)
             config.showsCursor = false
             config.captureResolution = .best
-            let filter: SCContentFilter
-            if let ownApplication {
-                filter = SCContentFilter(display: display, excludingApplications: [ownApplication],
-                                         exceptingWindows: exceptions)
-            } else {
-                filter = SCContentFilter(display: display, excludingWindows: excludedWindows)
-            }
+            let filter = SCContentFilter(display: display, excludingWindows: [])
             try Task.checkCancellation()
             let logicalSize = screen.frame.size
             let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)

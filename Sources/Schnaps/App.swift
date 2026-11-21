@@ -377,7 +377,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if settingsWindow == nil {
             let window = AppWindow(contentRect: NSRect(x: 0, y: 0, width: 780, height: 560),
                                   styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
-            window.identifier = ScreenSnapshot.settingsWindowIdentifier
             window.title = L("Schnaps Settings")
             window.titleVisibility = .hidden
             window.titlebarAppearsTransparent = true
