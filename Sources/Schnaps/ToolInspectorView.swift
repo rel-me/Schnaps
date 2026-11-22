@@ -259,7 +259,7 @@ struct ToolInspectorView: View {
       Toggle(
         "Crosshair", isOn: Binding(get: { tools.crosshair }, set: { _ in tools.show?(.crosshair) }))
       LabeledContent("Line width") {
-        SliderValueInput(title: "Line width", value: $tools.lineWidth, range: 1...8, unit: "pt")
+        SliderValueInput(title: "Line width", value: $tools.lineWidth, range: 0.5...8, unit: "pt")
       }
       Button("Reset Origin") { tools.relativeOrigin = nil }
       Button("Follow Pointer") { tools.frozenCrosshair = nil }
@@ -268,7 +268,7 @@ struct ToolInspectorView: View {
       Text("Coordinates")
     } footer: {
       Text(
-        "Drag the label to pin and move the crosshair. While editing, click to set a relative origin. O sets the origin at the pointer; R resets it. Coordinates use the top-left of each display."
+        "Press Space to pin the crosshair or resume following the pointer. Drag the pinned label to move it. While editing, click to set a relative origin. O sets the origin at the pointer; R resets it. Coordinates use the top-left of each display."
       ).font(.footnote).padding(.top, -7)
     }
   }

@@ -117,7 +117,7 @@ final class DesignCanvas: NSView {
     if outlined {
       let outline = color.relativeLuminance > 0.45 ? NSColor.black : NSColor.white
       outline.withAlphaComponent(0.65).setStroke()
-      path.lineWidth = width + 2
+      path.lineWidth = width + 1
       path.stroke()
     }
     color.setStroke()
@@ -570,10 +570,20 @@ final class DesignCanvas: NSView {
   }
   func floatingLabelRect(_ tool: DesignTool) -> CGRect {
     let labelSize = captionSize(floatingText(tool))
+    if tool == .crosshair {
+      let point = floatingPoint(tool)
+      let gap: CGFloat = 12
+      let right = point.x + gap
+      let below = point.y + gap
+      let origin = CGPoint(
+        x: right + labelSize.width <= bounds.maxX ? right : point.x - gap - labelSize.width,
+        y: below + labelSize.height <= bounds.maxY ? below : point.y - gap - labelSize.height)
+      return OverlayControlPlacement.clamped(CGRect(origin: origin, size: labelSize), in: bounds)
+    }
     let label = state.floatingLabels[tool]
     let origin = (label?.display == displayID ? label?.origin : nil) ?? CGPoint(
       x: bounds.maxX - labelSize.width - 16,
-      y: (tool == .crosshair ? 8 : 42) + (24 - labelSize.height) / 2)
+      y: 42 + (24 - labelSize.height) / 2)
     return OverlayControlPlacement.clamped(CGRect(origin: origin, size: labelSize), in: bounds)
   }
   private func floatingHit(at point: CGPoint) -> DesignTool? {
@@ -582,7 +592,7 @@ final class DesignCanvas: NSView {
     }
     // Keep normal tool use click-through except for the explicit label controls.
     guard state.editing else { return nil }
-    // Pointer-following visuals cannot be chased; their stable labels are always grabbable.
+    // Only pinned visuals can be grabbed outside their labels.
     if floatingEnabled(.loupe), state.frozenLoupe != nil, loupeRect(at: floatingPoint(.loupe)).contains(point) {
       return .loupe
     }
@@ -652,9 +662,13 @@ final class DesignCanvas: NSView {
       let size = destination.id == displayID ? bounds.size : destination.bounds.size
       let clipped = CGPoint(x: max(0, min(size.width - 1, local.x)), y: max(0, min(size.height - 1, local.y)))
       let global = destination.bounds.desktopPoint(from: clipped)
-      let label = display.frame.desktopPoint(from: CGPoint(x: drag.label.minX + dx, y: drag.label.minY + dy))
-      state.floatingLabels[drag.tool] = (destination.id, destination.bounds.displayPoint(from: label))
-      if drag.tool == .loupe { state.frozenLoupe = global } else { state.frozenCrosshair = global }
+      if drag.tool == .loupe {
+        let label = display.frame.desktopPoint(from: CGPoint(x: drag.label.minX + dx, y: drag.label.minY + dy))
+        state.floatingLabels[.loupe] = (destination.id, destination.bounds.displayPoint(from: label))
+        state.frozenLoupe = global
+      } else {
+        state.frozenCrosshair = global
+      }
       needsDisplay = true
       return
     }
@@ -755,6 +769,13 @@ final class DesignCanvas: NSView {
   override func keyDown(with event: NSEvent) {
     if event.keyCode == 53 {
       if !event.isARepeat { state.dismiss?() }
+      return
+    }
+    if state.crosshair && (!state.loupe || state.tool == .crosshair), event.keyCode == 49,
+      event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
+      if !event.isARepeat {
+        state.frozenCrosshair = state.frozenCrosshair == nil ? NSEvent.mouseLocation : nil
+      }
       return
     }
     if state.loupe && !state.editing && handleLoupeKey(event) { return }
