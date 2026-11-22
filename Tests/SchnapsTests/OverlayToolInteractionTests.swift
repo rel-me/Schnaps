@@ -276,10 +276,54 @@ func draggingAPinnedCursorToolTransfersItsSampleAndLabel(tool: DesignTool) throw
   #expect(target.contains(moved))
   #expect(abs(moved.x - sample.x + source.width) < 0.001)
   #expect(abs(moved.y - sample.y + 30) < 0.001)
-  let movedLabel = try #require(state.floatingLabels[tool])
-  #expect(movedLabel.display == targetID)
-  #expect(abs(movedLabel.origin.x - label.minX) < 0.001)
-  #expect(abs(movedLabel.origin.y - label.minY - 30) < 0.001)
+  if tool == .loupe {
+    let movedLabel = try #require(state.floatingLabels[tool])
+    #expect(movedLabel.display == targetID)
+    #expect(abs(movedLabel.origin.x - label.minX) < 0.001)
+    #expect(abs(movedLabel.origin.y - label.minY - 30) < 0.001)
+  } else {
+    #expect(state.floatingLabels[tool] == nil)
+  }
+}
+
+@Test @MainActor func crosshairLabelStaysBesideTheIntersectionAtDisplayEdges() throws {
+  let screen = try #require(NSScreen.main)
+  let name = "Schnaps.CrosshairLabel.Tests." + UUID().uuidString
+  let defaults = try #require(UserDefaults(suiteName: name))
+  defer { defaults.removePersistentDomain(forName: name) }
+  let state = DesignTools(defaults: defaults)
+  state.crosshair = true
+  let bounds = CGRect(x: 0, y: 0, width: 800, height: 600)
+  let canvas = DesignCanvas(frame: bounds, screen: screen, state: state)
+
+  for x: CGFloat in [200, 799] {
+    for y: CGFloat in [200, 599] {
+      let point = CGPoint(x: x, y: y)
+      state.frozenCrosshair = screen.frame.desktopPoint(from: point)
+      let label = canvas.floatingLabelRect(.crosshair)
+      #expect(bounds.contains(label))
+      #expect(x == 200 ? label.minX > x : label.maxX < x)
+      #expect(y == 200 ? label.minY > y : label.maxY < y)
+    }
+  }
+}
+
+@Test @MainActor func spacePinsAndReleasesCrosshair() throws {
+  let screen = try #require(NSScreen.main)
+  let name = "Schnaps.CrosshairPin.Tests." + UUID().uuidString
+  let defaults = try #require(UserDefaults(suiteName: name))
+  defer { defaults.removePersistentDomain(forName: name) }
+  let state = DesignTools(defaults: defaults)
+  state.crosshair = true
+  let canvas = DesignCanvas(frame: CGRect(origin: .zero, size: screen.frame.size), screen: screen, state: state)
+  let space = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+    timestamp: 0, windowNumber: 0, context: nil, characters: " ", charactersIgnoringModifiers: " ",
+    isARepeat: false, keyCode: 49))
+
+  canvas.keyDown(with: space)
+  #expect(state.frozenCrosshair != nil)
+  canvas.keyDown(with: space)
+  #expect(state.frozenCrosshair == nil)
 }
 
 @Test(arguments: [false, true]) @MainActor
