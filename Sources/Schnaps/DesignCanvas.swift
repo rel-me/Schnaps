@@ -168,8 +168,17 @@ final class DesignCanvas: NSView {
         CGPoint(x: marker.vertical ? marker.x + 4 : 8, y: marker.vertical ? 8 : marker.y + 4))
     }
     if marker.tool != .ruler {
-      return ("\(number(marker.width)) × \(number(marker.height)) pt · \(number(marker.x)), \(number(marker.y)) · \(number(marker.width/marker.height)):1",
-        CGPoint(x: marker.x, y: marker.y - 24))
+      let dimensions = "\(number(marker.width)) × \(number(marker.height)) pt · \(number(marker.x)), \(number(marker.y)) · \(number(marker.width/marker.height)):1"
+      if marker.tool == .screens {
+        let top = min(marker.height, marker.topInset)
+        let bottom = min(marker.height - top, marker.bottomInset + marker.keyboardHeight)
+        let left = min(marker.width, marker.leftInset)
+        let right = min(marker.width - left, marker.rightInset)
+        let usable = "Usable \(number(marker.width-left-right)) × \(number(marker.height-top-bottom)) pt"
+        return ("\(dimensions) · \(usable)",
+          CGPoint(x: marker.x, y: marker.y - OverlayLabelStyle.height - 8))
+      }
+      return (dimensions, CGPoint(x: marker.x, y: marker.y - 24))
     }
     guard bounds.contains(CGPoint(x: marker.x, y: marker.y)) else { return nil }
     let pixels = UserDefaults.standard.string(forKey: PreferenceKey.unit) == "px"
@@ -194,6 +203,8 @@ final class DesignCanvas: NSView {
         bounds: bounds, avoiding: controls, gap: gap,
         positiveGap: marker.tool == .ruler && marker.square ? max(gap, marker.height + 4) : gap,
         length: marker.tool == .ruler ? marker.width : nil)
+    } else if marker.tool == .screens {
+      group = OverlayControlPlacement.clamped(CGRect(origin: point, size: size), in: bounds)
     } else {
       group = OverlayControlPlacement.frame(size: size, around: marker.rect, in: bounds, avoiding: controls)
     }
@@ -220,14 +231,6 @@ final class DesignCanvas: NSView {
   }
   private func secondaryCaptions(for marker: DesignMarker) -> [(String, CGRect)] {
     guard marker.display == displayID else { return [] }
-    if marker.tool == .screens {
-      let top = min(marker.height, marker.topInset)
-      let bottom = min(marker.height - top, marker.bottomInset + marker.keyboardHeight)
-      let left = min(marker.width, marker.leftInset)
-      let right = min(marker.width - left, marker.rightInset)
-      let text = "Usable \(number(marker.width-left-right)) × \(number(marker.height-top-bottom)) pt"
-      return [(text, captionRect(text, at: CGPoint(x: marker.x + left + 4, y: marker.y + top + 4)))]
-    }
     if marker.tool == .guides,
       let next = displayedMarkers.filter({ $0.tool == .guides && $0.vertical == marker.vertical
         && ($0.vertical ? $0.x > marker.x : $0.y > marker.y) }).min(by: {
@@ -572,10 +575,9 @@ final class DesignCanvas: NSView {
     if tool == .crosshair {
       let point = floatingPoint(tool)
       let gap: CGFloat = 12
-      let right = point.x + gap
       let below = point.y + gap
       let origin = CGPoint(
-        x: right + labelSize.width <= bounds.maxX ? right : point.x - gap - labelSize.width,
+        x: point.x - labelSize.width / 2,
         y: below + labelSize.height <= bounds.maxY ? below : point.y - gap - labelSize.height)
       return OverlayControlPlacement.clamped(CGRect(origin: origin, size: labelSize), in: bounds)
     }

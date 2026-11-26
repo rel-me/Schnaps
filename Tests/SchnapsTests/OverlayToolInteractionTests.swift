@@ -54,7 +54,7 @@ func everyMarkerHasVisibleGrabbableControlsAtDisplayEdges(tool: DesignTool) thro
   }
 }
 
-@Test @MainActor func labelsWinOverOtherToolsAndSecondaryLabelsMoveTheirOwner() throws {
+@Test @MainActor func screensHasOneTopLabelThatMovesItsMarkerAboveOverlappingTools() throws {
   let screen = try #require(NSScreen.main)
   let name = "Schnaps.LabelPriority.Tests." + UUID().uuidString
   let defaults = try #require(UserDefaults(suiteName: name))
@@ -63,6 +63,7 @@ func everyMarkerHasVisibleGrabbableControlsAtDisplayEdges(tool: DesignTool) thro
   state.editing = true
   state.visible = true
   var screenMarker = DesignMarker(tool: .screens, display: DesignTools.displayID(screen))
+  screenMarker.y = 0
   screenMarker.topInset = 59
   var covering = DesignMarker(tool: .frames, display: screenMarker.display)
   covering.x = 0; covering.y = 0; covering.width = 800; covering.height = 600
@@ -72,13 +73,13 @@ func everyMarkerHasVisibleGrabbableControlsAtDisplayEdges(tool: DesignTool) thro
   panel.isReleasedWhenClosed = false
   panel.contentView = canvas
   defer { panel.close() }
-  for label in canvas.markerLabelRects(for: screenMarker) {
-    let point = CGPoint(x: label.midX, y: label.midY)
-    #expect(canvas.editableMarker(at: point)?.id == screenMarker.id)
-    #expect(canvas.cursor(at: point) === NSCursor.openHand)
-  }
-  let usable = try #require(canvas.markerLabelRects(for: screenMarker).last)
-  let start = CGPoint(x: usable.midX, y: usable.midY)
+  let labels = canvas.markerLabelRects(for: screenMarker)
+  #expect(labels.count == 1)
+  let label = try #require(labels.first)
+  #expect(label.minY == canvas.bounds.minY)
+  let start = CGPoint(x: label.midX, y: label.midY)
+  #expect(canvas.editableMarker(at: start)?.id == screenMarker.id)
+  #expect(canvas.cursor(at: start) === NSCursor.openHand)
   canvas.mouseDown(with: try mouse(.leftMouseDown, at: start, in: canvas))
   let end = CGPoint(x: start.x + 30, y: start.y + 40)
   canvas.mouseDragged(with: try mouse(.leftMouseDragged, at: end, in: canvas))
@@ -87,6 +88,8 @@ func everyMarkerHasVisibleGrabbableControlsAtDisplayEdges(tool: DesignTool) thro
   #expect(state.markers[0].y == screenMarker.y + 40)
   #expect(state.markers[0].width == screenMarker.width)
   #expect(state.markers[1] == covering)
+  let movedLabel = try #require(canvas.markerLabelRect(for: state.markers[0]))
+  #expect(movedLabel.maxY < state.markers[0].rect.minY)
 }
 
 @Test(arguments: [DesignTool.ruler, .guides, .frames, .overlay, .screens], [false, true]) @MainActor
@@ -303,7 +306,7 @@ func draggingAPinnedCursorToolTransfersItsSample(tool: DesignTool) throws {
   }
 }
 
-@Test @MainActor func crosshairLabelStaysBesideTheIntersectionAtDisplayEdges() throws {
+@Test @MainActor func crosshairLabelStaysCenteredBelowTheIntersectionWhenItFits() throws {
   let screen = try #require(NSScreen.main)
   let name = "Schnaps.CrosshairLabel.Tests." + UUID().uuidString
   let defaults = try #require(UserDefaults(suiteName: name))
@@ -313,13 +316,15 @@ func draggingAPinnedCursorToolTransfersItsSample(tool: DesignTool) throws {
   let bounds = CGRect(x: 0, y: 0, width: 800, height: 600)
   let canvas = DesignCanvas(frame: bounds, screen: screen, state: state)
 
-  for x: CGFloat in [200, 799] {
+  for x: CGFloat in [0, 200, 799] {
     for y: CGFloat in [200, 599] {
       let point = CGPoint(x: x, y: y)
       state.frozenCrosshair = screen.frame.desktopPoint(from: point)
       let label = canvas.floatingLabelRect(.crosshair)
       #expect(bounds.contains(label))
-      #expect(x == 200 ? label.minX > x : label.maxX < x)
+      if x == 200 { #expect(label.midX == x) }
+      if x == 0 { #expect(label.minX == bounds.minX) }
+      if x == 799 { #expect(label.maxX == bounds.maxX) }
       #expect(y == 200 ? label.minY > y : label.maxY < y)
     }
   }

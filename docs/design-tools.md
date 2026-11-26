@@ -47,7 +47,7 @@ Screens includes phone, tablet, laptop, desktop, TV, watch, and social-asset log
 
 Screens and Loupe offer approximate protanopia, deuteranopia, tritanopia, grayscale, and blurred-vision previews. These are design aids, not clinical simulations. Screens can downsample a Retina capture to simulate a 1× display. Live previews require Screen Recording.
 
-Crosshair follows the pointer and shows coordinates beside the intersection, measured from the display's top-left. Press Space to pin it or resume following the pointer, and drag the pinned label to move the crosshair. While editing, click or press O to set a relative origin, then press R to reset it. Relative origins remain correct across displays. Line width is adjustable and respects the Auto contrast preference.
+Crosshair follows the pointer and shows coordinates below the intersection, measured from the display's top-left. The label moves above the intersection when it would run off the bottom edge. Press Space to pin it or resume following the pointer, and drag the pinned label to move the crosshair. While editing, click or press O to set a relative origin, then press R to reset it. Relative origins remain correct across displays. Line width is adjustable and respects the Auto contrast preference.
 
 ## Loupe and palettes
 
