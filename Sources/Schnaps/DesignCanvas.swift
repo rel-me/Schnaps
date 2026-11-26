@@ -604,6 +604,7 @@ final class DesignCanvas: NSView {
   override func mouseDown(with event: NSEvent) {
     let point = convert(event.locationInWindow, from: nil)
     if let tool = floatingHit(at: point) {
+      state.tool = tool
       let sample = floatingPoint(tool)
       floatingDrag = (tool, sample)
       let global = display.frame.desktopPoint(from: sample)
@@ -632,6 +633,7 @@ final class DesignCanvas: NSView {
     window?.makeFirstResponder(self)
     state.beginDragging()
     state.selectedID = selected.id
+    state.tool = selected.tool
     if event.modifierFlags.contains(.option) { state.duplicate() }
     guard let saved = state.selected else { state.endDragging(); return }
     let marker = saved.display == displayID ? saved : displayedMarkers.first { $0.id == saved.id } ?? saved
@@ -769,6 +771,11 @@ final class DesignCanvas: NSView {
       if !event.isARepeat { state.dismiss?() }
       return
     }
+    if event.charactersIgnoringModifiers?.lowercased() == "w",
+      event.modifierFlags.intersection([.command, .control, .option, .shift]) == .control {
+      if !event.isARepeat { closeSelectedTool() }
+      return
+    }
     if state.crosshair && (!state.loupe || state.tool == .crosshair), event.keyCode == 49,
       event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
       if !event.isARepeat {
@@ -825,9 +832,28 @@ final class DesignCanvas: NSView {
           let next =
             (list.firstIndex(where: { $0.id == state.selectedID }).map { $0 + 1 } ?? 0) % list.count
           state.selectedID = list[next].id
+          state.tool = list[next].tool
         }
       default: super.keyDown(with: event)
       }
     }
+  }
+
+  private func closeSelectedTool() {
+    switch state.tool {
+    case .loupe where state.loupe:
+      cancelDragging()
+      state.loupe = false
+    case .crosshair where state.crosshair:
+      cancelDragging()
+      state.crosshair = false
+    case .loupe, .crosshair:
+      return
+    default:
+      guard state.editing, state.visible, let marker = state.selected, marker.isVisible, !marker.locked else { return }
+      cancelDragging()
+      state.removeMarker(id: marker.id)
+    }
+    inputChanged?()
   }
 }

@@ -44,7 +44,7 @@ struct ToolInspectorView: View {
       Text("Design tools")
     } footer: {
       Text(
-        "Drag a tool or any of its labels to move. Click × to close a tool, or select a marker and press Delete. Drag a ruler’s round end handle to rotate; hold Shift for 45°. Control snaps to detected edges. Escape dismisses the last shown tool. Clicks away from editable marks pass through. Turn off editing to let all clicks pass through."
+        "Drag a tool or any of its labels to move. Press Control-W to close the selected tool. Click × or press Delete to remove a marker. Drag a ruler’s round end handle to rotate; hold Shift for 45°. Control snaps to detected edges. Escape dismisses the last shown tool. Clicks away from editable marks pass through. Turn off editing to let all clicks pass through."
       ).font(.footnote).padding(.top, -7)
     }
     if tools.tool == .loupe {
