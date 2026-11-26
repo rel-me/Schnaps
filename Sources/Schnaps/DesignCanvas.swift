@@ -11,7 +11,7 @@ final class DesignCanvas: NSView {
   var inputChanged: (() -> Void)?
   var isDragging: Bool { dragStart != nil }
   var isDraggingMarker: Bool { isDragging && floatingDrag == nil }
-  private var floatingDrag: (tool: DesignTool, sample: CGPoint, label: CGRect)?
+  private var floatingDrag: (tool: DesignTool, sample: CGPoint)?
   private var dragStart: CGPoint?
   private var original: DesignMarker?
   private var originals: [DesignMarker] = []
@@ -277,7 +277,6 @@ final class DesignCanvas: NSView {
       for (text, rect) in secondaryCaptions(for: marker) { drawCaption(text, in: rect) }
       drawMarkerCaption(marker)
     }
-    let point = pointer
     let crosshair = floatingPoint(.crosshair)
     if state.crosshair, bounds.contains(crosshair) {
       let color = MeasurementPreferences.color(PreferenceKey.guideColor)
@@ -289,12 +288,9 @@ final class DesignCanvas: NSView {
         CGPoint(x: crosshair.x, y: 0), CGPoint(x: crosshair.x, y: bounds.height), color: color,
         width: state.lineWidth, outlined: outlined)
     }
-    if state.loupe {
-      let frozen =
-        state.frozenLoupe.map {
-          CGPoint(x: $0.x - display.frame.minX, y: display.frame.maxY - $0.y)
-        } ?? point
-      if bounds.contains(frozen) { drawLoupe(at: frozen, frame: frame) }
+    let loupe = floatingPoint(.loupe)
+    if state.loupe, bounds.contains(loupe) {
+      drawLoupe(at: loupe, frame: frame)
     }
     for tool in [DesignTool.crosshair, .loupe] where floatingEnabled(tool) {
       drawCaption(floatingText(tool), in: floatingLabelRect(tool))
@@ -552,9 +548,12 @@ final class DesignCanvas: NSView {
     let global = tool == .loupe ? state.frozenLoupe : state.frozenCrosshair
     return global.map { CGPoint(x: $0.x - display.frame.minX, y: display.frame.maxY - $0.y) } ?? pointer
   }
-  private func loupeRect(at point: CGPoint) -> CGRect {
-    OverlayControlPlacement.clamped(CGRect(x: point.x + 24, y: point.y + 24, width: 180, height: 180),
-      in: bounds.insetBy(dx: 8, dy: 8))
+  private let loupeLabelGap: CGFloat = 8
+  func loupeRect(at point: CGPoint) -> CGRect {
+    var available = bounds.insetBy(dx: 8, dy: 8)
+    available.size.height = max(0, available.height - loupeLabelGap - OverlayLabelStyle.height)
+    return OverlayControlPlacement.clamped(
+      CGRect(x: point.x + 24, y: point.y + 24, width: 180, height: 180), in: available)
   }
   func floatingText(_ tool: DesignTool) -> String {
     if tool == .loupe {
@@ -580,10 +579,8 @@ final class DesignCanvas: NSView {
         y: below + labelSize.height <= bounds.maxY ? below : point.y - gap - labelSize.height)
       return OverlayControlPlacement.clamped(CGRect(origin: origin, size: labelSize), in: bounds)
     }
-    let label = state.floatingLabels[tool]
-    let origin = (label?.display == displayID ? label?.origin : nil) ?? CGPoint(
-      x: bounds.maxX - labelSize.width - 16,
-      y: 42 + (24 - labelSize.height) / 2)
+    let loupe = loupeRect(at: floatingPoint(tool))
+    let origin = CGPoint(x: loupe.midX - labelSize.width / 2, y: loupe.maxY + loupeLabelGap)
     return OverlayControlPlacement.clamped(CGRect(origin: origin, size: labelSize), in: bounds)
   }
   private func floatingHit(at point: CGPoint) -> DesignTool? {
@@ -605,8 +602,9 @@ final class DesignCanvas: NSView {
   override func mouseDown(with event: NSEvent) {
     let point = convert(event.locationInWindow, from: nil)
     if let tool = floatingHit(at: point) {
-      floatingDrag = (tool, floatingPoint(tool), floatingLabelRect(tool))
-      let global = display.frame.desktopPoint(from: floatingPoint(tool))
+      let sample = floatingPoint(tool)
+      floatingDrag = (tool, sample)
+      let global = display.frame.desktopPoint(from: sample)
       if tool == .loupe { state.frozenLoupe = global } else { state.frozenCrosshair = global }
       window?.makeKey()
       window?.makeFirstResponder(self)
@@ -663,8 +661,6 @@ final class DesignCanvas: NSView {
       let clipped = CGPoint(x: max(0, min(size.width - 1, local.x)), y: max(0, min(size.height - 1, local.y)))
       let global = destination.bounds.desktopPoint(from: clipped)
       if drag.tool == .loupe {
-        let label = display.frame.desktopPoint(from: CGPoint(x: drag.label.minX + dx, y: drag.label.minY + dy))
-        state.floatingLabels[.loupe] = (destination.id, destination.bounds.displayPoint(from: label))
         state.frozenLoupe = global
       } else {
         state.frozenCrosshair = global

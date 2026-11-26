@@ -239,7 +239,7 @@ func floatingToolLabelsDragWithoutCloseControls(tool: DesignTool, editing: Bool)
 }
 
 @Test(arguments: [DesignTool.loupe, .crosshair]) @MainActor
-func draggingAPinnedCursorToolTransfersItsSampleAndLabel(tool: DesignTool) throws {
+func draggingAPinnedCursorToolTransfersItsSample(tool: DesignTool) throws {
   let screen = try #require(NSScreen.main)
   let name = "Schnaps.CursorToolAcrossDisplays.Tests." + UUID().uuidString
   let defaults = try #require(UserDefaults(suiteName: name))
@@ -276,13 +276,30 @@ func draggingAPinnedCursorToolTransfersItsSampleAndLabel(tool: DesignTool) throw
   #expect(target.contains(moved))
   #expect(abs(moved.x - sample.x + source.width) < 0.001)
   #expect(abs(moved.y - sample.y + 30) < 0.001)
-  if tool == .loupe {
-    let movedLabel = try #require(state.floatingLabels[tool])
-    #expect(movedLabel.display == targetID)
-    #expect(abs(movedLabel.origin.x - label.minX) < 0.001)
-    #expect(abs(movedLabel.origin.y - label.minY - 30) < 0.001)
-  } else {
-    #expect(state.floatingLabels[tool] == nil)
+}
+
+@Test @MainActor func loupeLabelStaysBelowTheMagnifiedViewAtDisplayEdges() throws {
+  let screen = try #require(NSScreen.main)
+  let name = "Schnaps.LoupeLabel.Tests." + UUID().uuidString
+  let defaults = try #require(UserDefaults(suiteName: name))
+  defer { defaults.removePersistentDomain(forName: name) }
+  let state = DesignTools(defaults: defaults)
+  state.loupe = true
+  let bounds = CGRect(x: 0, y: 0, width: 800, height: 600)
+  let canvas = DesignCanvas(frame: bounds, screen: screen, state: state)
+
+  for x: CGFloat in [0, 200, 799] {
+    for y: CGFloat in [0, 200, 599] {
+      let point = CGPoint(x: x, y: y)
+      state.frozenLoupe = screen.frame.desktopPoint(from: point)
+      let view = canvas.loupeRect(at: point)
+      let label = canvas.floatingLabelRect(.loupe)
+      #expect(bounds.contains(view.union(label)))
+      #expect(label.minY > view.maxY)
+      #expect(label.minX < view.midX && label.maxX > view.midX)
+      if x == 200 { #expect(label.midX == view.midX) }
+      #expect(canvas.cursor(at: CGPoint(x: label.midX, y: label.midY)) === NSCursor.openHand)
+    }
   }
 }
 
