@@ -118,7 +118,6 @@ final class DesignTools: ObservableObject {
   }
   @Published var frozenCrosshair: CGPoint? { didSet { redraw?() } }
   @Published var relativeOrigin: CGPoint? { didSet { redraw?() } }
-  var floatingLabels: [DesignTool: (display: UInt32, origin: CGPoint)] = [:]
   @Published var lineWidth = 0.5 { didSet { redraw?() } }
   @Published var loupe = false {
     didSet {
@@ -580,7 +579,6 @@ final class DesignToolsController {
   }
   private func rebuild() {
     state.endDragging()
-    state.floatingLabels.removeAll()
     for window in windows {
       window.orderOut(nil)
       window.close()
