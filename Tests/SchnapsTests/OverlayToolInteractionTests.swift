@@ -11,6 +11,72 @@ private func mouse(_ type: NSEvent.EventType, at point: CGPoint, in view: NSView
     context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
 }
 
+@MainActor
+private func controlW(in view: NSView, repeat isRepeat: Bool = false) throws -> NSEvent {
+  try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.control],
+    timestamp: 0, windowNumber: view.window?.windowNumber ?? 0, context: nil,
+    characters: "\u{17}", charactersIgnoringModifiers: "w", isARepeat: isRepeat, keyCode: 13))
+}
+
+@Test @MainActor func controlWClosesOnlyTheSelectedEditableMarkerAndIgnoresRepeat() throws {
+  let screen = try #require(NSScreen.main)
+  let name = "Schnaps.CloseSelectedMarker.Tests." + UUID().uuidString
+  let defaults = try #require(UserDefaults(suiteName: name))
+  defer { defaults.removePersistentDomain(forName: name) }
+  let state = DesignTools(defaults: defaults)
+  let canvas = DesignCanvas(frame: CGRect(x: 0, y: 0, width: 800, height: 600), screen: screen, state: state)
+  let panel = NSPanel(contentRect: canvas.bounds, styleMask: [.borderless], backing: .buffered, defer: false)
+  panel.isReleasedWhenClosed = false
+  panel.contentView = canvas
+  defer { panel.close() }
+  let display = DesignTools.displayID(screen)
+  let selected = DesignMarker(tool: .frames, display: display)
+  var other = DesignMarker(tool: .screens, display: display)
+  other.x = 330
+  state.markers = [selected, other]
+  state.visible = true
+  state.editing = true
+  state.selectedID = other.id
+  let label = try #require(canvas.markerLabelRect(for: selected))
+  let point = CGPoint(x: label.midX, y: label.midY)
+  canvas.mouseDown(with: try mouse(.leftMouseDown, at: point, in: canvas))
+  canvas.keyDown(with: try controlW(in: canvas))
+  canvas.mouseDragged(with: try mouse(.leftMouseDragged, at: point, in: canvas))
+  canvas.keyDown(with: try controlW(in: canvas, repeat: true))
+  #expect(state.markers == [other])
+  #expect(!canvas.isDragging)
+
+  state.markers[0].locked = true
+  canvas.keyDown(with: try controlW(in: canvas))
+  #expect(state.markers.map(\.id) == [other.id])
+}
+
+@Test(arguments: [DesignTool.loupe, .crosshair]) @MainActor
+func controlWClosesTheClickedPointerTool(tool: DesignTool) throws {
+  let screen = try #require(NSScreen.main)
+  let name = "Schnaps.ClosePointerTool.Tests." + UUID().uuidString
+  let defaults = try #require(UserDefaults(suiteName: name))
+  defer { defaults.removePersistentDomain(forName: name) }
+  let state = DesignTools(defaults: defaults)
+  let canvas = DesignCanvas(frame: CGRect(x: 0, y: 0, width: 800, height: 600), screen: screen, state: state)
+  let panel = NSPanel(contentRect: canvas.bounds, styleMask: [.borderless], backing: .buffered, defer: false)
+  panel.isReleasedWhenClosed = false
+  panel.contentView = canvas
+  defer { panel.close() }
+  state.tool = tool == .loupe ? .crosshair : .loupe
+  state.loupe = true
+  state.crosshair = true
+  state.frozenLoupe = screen.frame.desktopPoint(from: CGPoint(x: 150, y: 150))
+  state.frozenCrosshair = screen.frame.desktopPoint(from: CGPoint(x: 500, y: 200))
+  let label = canvas.floatingLabelRect(tool)
+  let point = CGPoint(x: label.midX, y: label.midY)
+  canvas.mouseDown(with: try mouse(.leftMouseDown, at: point, in: canvas))
+  canvas.mouseUp(with: try mouse(.leftMouseUp, at: point, in: canvas))
+  canvas.keyDown(with: try controlW(in: canvas))
+  #expect(state.loupe == (tool == .crosshair))
+  #expect(state.crosshair == (tool == .loupe))
+}
+
 @Test(arguments: [DesignTool.ruler, .guides, .frames, .overlay, .screens]) @MainActor
 func everyMarkerHasVisibleGrabbableControlsAtDisplayEdges(tool: DesignTool) throws {
   let screen = try #require(NSScreen.main)

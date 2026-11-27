@@ -369,6 +369,7 @@ struct SettingsView: View {
                 shortcut("Next horizontal guide / vertical guide / frame", "H / V / F")
                 shortcut("Set / reset crosshair origin", "O / R")
                 shortcut("Delete selected marker", "Delete")
+                shortcut("Close selected tool", "⌃W")
                 shortcut("Dismiss most recent tool", "Escape (repeat to clear)")
             }
             Section("While Using Loupe") {
