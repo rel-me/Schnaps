@@ -45,6 +45,13 @@ struct DesignMarker: Identifiable, Codable, Equatable {
   var end: CGPoint {
     DesignGeometry.endpoint(origin: CGPoint(x: x, y: y), length: width, degrees: angle)
   }
+  mutating func applyScreenTemplate(_ template: ScreenTemplate) {
+    aspectRatio = 0
+    width = template.width
+    height = template.height
+    topInset = template.top
+    bottomInset = template.bottom
+  }
   mutating func validate() {
     x = x.isFinite ? min(100000, max(-100000, x)) : 100
     y = y.isFinite ? min(100000, max(-100000, y)) : 100
@@ -245,7 +252,7 @@ final class DesignTools: ObservableObject {
     }
     markers = result
   }
-  func add(_ kind: DesignTool, screen: NSScreen? = nil) {
+  func add(_ kind: DesignTool, screen: NSScreen? = nil, screenTemplate: ScreenTemplate = .standardPhone) {
     let screen =
       screen ?? NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) })
       ?? NSScreen.main
@@ -279,11 +286,8 @@ final class DesignTools: ObservableObject {
       marker.spacing = 8
     }
     if kind == .screens {
-      marker.width = 393
-      marker.height = 852
       marker.safeAreas = true
-      marker.topInset = 59
-      marker.bottomInset = 34
+      marker.applyScreenTemplate(screenTemplate)
     }
     markers.append(marker)
     selectedID = marker.id
@@ -496,7 +500,7 @@ final class DesignToolsController {
       Task { @MainActor in self?.rebuild() }
     }
   }
-  func activate(_ tool: DesignTool) {
+  func activate(_ tool: DesignTool, screenTemplate: ScreenTemplate = .standardPhone) {
     if tool == .loupe || tool == .crosshair {
       state.tool = tool
       if tool == .loupe {
@@ -511,7 +515,7 @@ final class DesignToolsController {
       }
       state.editing = false
     } else {
-      state.add(tool)
+      state.add(tool, screenTemplate: screenTemplate)
     }
     synchronize()
     if (tool == .loupe && state.loupe) || (tool == .crosshair && state.crosshair),

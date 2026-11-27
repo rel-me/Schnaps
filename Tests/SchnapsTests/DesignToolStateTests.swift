@@ -4,6 +4,19 @@ import Testing
 
 @testable import Schnaps
 
+@Test func screenTemplateAppliesSizeAndInsetsWithoutMovingMarker() throws {
+  let tablet = try #require(ScreenTemplate.tablets.first)
+  var marker = DesignMarker(tool: .screens, display: 42)
+  marker.applyScreenTemplate(.standardPhone)
+  let position = marker.rect.origin
+  marker.aspectRatio = 1
+  marker.applyScreenTemplate(tablet)
+  #expect(marker.rect == CGRect(origin: position, size: CGSize(width: tablet.width, height: tablet.height)))
+  #expect(marker.topInset == tablet.top)
+  #expect(marker.bottomInset == tablet.bottom)
+  #expect(marker.aspectRatio == 0)
+}
+
 @Test @MainActor func designMarkersValidateAndPersistWithoutSharingTestDefaults() throws {
   let name = "Schnaps.DesignTools.Tests." + UUID().uuidString
   let defaults = try #require(UserDefaults(suiteName: name))
