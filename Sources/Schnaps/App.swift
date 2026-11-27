@@ -56,6 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         overlay.onStateChanged = { [weak self] mode in self?.menuBarStatus.measurementChanged(mode) }
         toolOverlay.measure = { [weak self] in self?.start(mode: $0) }
         toolOverlay.activateTool = { [weak self] in self?.activateDesignTool($0) }
+        toolOverlay.activateScreen = { [weak self] in self?.activateDesignTool(.screens, screenTemplate: $0) }
         toolOverlay.showText = { [weak self] palette in
             guard let self else { return }
             overlay.stop()
@@ -234,7 +235,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func addDesignToolLaunchers(to menu: NSMenu) {
         for index in DesignTool.allCases.indices {
             let entry = shortcutItem(ShortcutAction(rawValue: UInt32(index + 3))!, action: #selector(launchDesignTool(_:)))
-            entry.tag = index; menu.addItem(entry)
+            entry.tag = index
+            if DesignTool.allCases[index] == .screens {
+                let screens = NSMenuItem(title: entry.title, action: nil, keyEquivalent: "")
+                entry.title = L("Add Standard Phone")
+                screens.submenu = ScreenTemplateMenu.make(
+                    target: self, action: #selector(launchScreenTemplate(_:)), defaultItem: entry)
+                menu.addItem(screens)
+            } else {
+                menu.addItem(entry)
+            }
         }
     }
 
@@ -261,9 +271,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard DesignTool.allCases.indices.contains(sender.tag) else { return }
         activateDesignTool(DesignTool.allCases[sender.tag])
     }
-    private func activateDesignTool(_ tool: DesignTool) {
+    @objc private func launchScreenTemplate(_ sender: NSMenuItem) {
+        guard let template = sender.representedObject as? ScreenTemplate else { return }
+        activateDesignTool(.screens, screenTemplate: template)
+    }
+    private func activateDesignTool(_ tool: DesignTool, screenTemplate: ScreenTemplate = .standardPhone) {
         overlay.stop()
-        designTools.activate(tool)
+        designTools.activate(tool, screenTemplate: screenTemplate)
     }
     @objc private func editDesignTools() { toolOverlay.inspect() }
     @objc private func showImagePreview() { overlay.stop(); ImagePreview.shared.show() }

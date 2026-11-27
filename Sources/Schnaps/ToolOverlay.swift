@@ -23,6 +23,7 @@ final class ToolOverlayController: NSObject, NSWindowDelegate, NSPopoverDelegate
     var onVisibilityChanged: (() -> Void)?
     var measure: ((MeasurementMode) -> Void)?
     var activateTool: ((DesignTool) -> Void)?
+    var activateScreen: ((ScreenTemplate) -> Void)?
     var showText: ((NSWindow) -> Void)?
     var beforeInspecting: (() -> Void)?
     var isEnabled: Bool { preferences.isEnabled }
@@ -159,7 +160,15 @@ final class ToolOverlayController: NSObject, NSWindowDelegate, NSPopoverDelegate
         switch sender.tag {
         case 0: measure?(.findDimensions)
         case 1: measure?(.area)
-        case 2..<(2 + DesignTool.allCases.count): activateTool?(DesignTool.allCases[sender.tag - 2])
+        case 2..<(2 + DesignTool.allCases.count):
+            let tool = DesignTool.allCases[sender.tag - 2]
+            if tool == .screens {
+                let menu = ScreenTemplateMenu.make(target: self, action: #selector(chooseScreenTemplate(_:)))
+                let lowerEdge = sender.isFlipped ? sender.bounds.maxY : sender.bounds.minY
+                menu.popUp(positioning: nil, at: NSPoint(x: sender.bounds.minX, y: lowerEdge), in: sender)
+            } else {
+                activateTool?(tool)
+            }
         case 2 + DesignTool.allCases.count:
             inspector?.close()
             if let panel { showText?(panel) }
@@ -167,6 +176,10 @@ final class ToolOverlayController: NSObject, NSWindowDelegate, NSPopoverDelegate
             if inspector?.isShown == true { inspector?.close() } else { inspect() }
         default: setEnabled(false)
         }
+    }
+    @objc private func chooseScreenTemplate(_ sender: NSMenuItem) {
+        guard let template = sender.representedObject as? ScreenTemplate else { return }
+        activateScreen?(template)
     }
 }
 

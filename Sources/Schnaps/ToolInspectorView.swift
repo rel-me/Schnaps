@@ -4,7 +4,7 @@ import SwiftUI
 
 struct ToolInspectorView: View {
   @ObservedObject var tools = DesignTools.shared
-  @State private var preset = ScreenTemplate.presets[3].name
+  @State private var preset = ScreenTemplate.standardPhone.name
   @State private var breakpoint = 960.0
   private func field(_ title: String, _ key: WritableKeyPath<DesignMarker, Double>) -> some View {
     TextField(
@@ -190,13 +190,7 @@ struct ToolInspectorView: View {
       }
       Button("Apply Template") {
         if let device = ScreenTemplate.presets.first(where: { $0.name == preset }) {
-          tools.update {
-            $0.aspectRatio = 0
-            $0.width = device.width
-            $0.height = device.height
-            $0.topInset = device.top
-            $0.bottomInset = device.bottom
-          }
+          tools.update { $0.applyScreenTemplate(device) }
         }
       }
       toggle("Title and action safe areas", \.safeAreas)

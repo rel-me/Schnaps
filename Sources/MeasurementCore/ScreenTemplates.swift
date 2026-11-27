@@ -13,23 +13,29 @@ public struct ScreenTemplate: Identifiable, Sendable {
     self.top = top
     self.bottom = bottom
   }
-  /// Logical viewport sizes, rather than claims about a specific browser's variable chrome.
-  public static let presets: [Self] = [
+  public static let standardPhone = Self("Phone · Standard", 393, 852, top: 59, bottom: 34)
+
+  /// Logical viewport sizes with editable insets.
+  public static let phones: [Self] = [
     .init("Phone · Compact", 320, 568, top: 20), .init("Phone · Small", 375, 667, top: 20),
     .init("Phone · Medium", 390, 844, top: 47, bottom: 34),
-    .init("Phone · Standard", 393, 852, top: 59, bottom: 34),
+    standardPhone,
     .init("Phone · Large", 430, 932, top: 59, bottom: 34),
     .init("Phone · Extra Large", 440, 956, top: 62, bottom: 34),
     .init("Android · Compact", 360, 640, top: 24, bottom: 24),
     .init("Android · Standard", 360, 800, top: 24, bottom: 24),
     .init("Android · Large", 412, 915, top: 24, bottom: 24),
     .init("Android · Wide", 480, 960, top: 24, bottom: 24),
+  ]
+  public static let tablets: [Self] = [
     .init("Tablet · Mini", 744, 1133, top: 24, bottom: 20),
     .init("Tablet · Standard", 810, 1080, top: 24, bottom: 20),
     .init("Tablet · Air", 820, 1180, top: 24, bottom: 20),
     .init("Tablet · 11 inch", 834, 1194, top: 24, bottom: 20),
     .init("Tablet · 13 inch", 1024, 1366, top: 24, bottom: 20),
     .init("Android Tablet", 800, 1280, top: 24, bottom: 24),
+  ]
+  public static let otherDevices: [Self] = [
     .init("Laptop · Compact", 1280, 800, top: 24), .init("Laptop · Standard", 1440, 900, top: 24),
     .init("Laptop · Large", 1512, 982, top: 38), .init("Laptop · Wide", 1728, 1117, top: 38),
     .init("Windows · Laptop", 1366, 768, bottom: 48),
@@ -44,4 +50,5 @@ public struct ScreenTemplate: Identifiable, Sendable {
     .init("Social · Square", 1080, 1080), .init("Social · Portrait", 1080, 1350),
     .init("Social · Story", 1080, 1920),
   ]
+  public static let presets = phones + tablets + otherDevices
 }

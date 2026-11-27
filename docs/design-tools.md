@@ -45,6 +45,8 @@ Apply/Next Breakpoint changes an independent overlay's width. For an attached wi
 
 Screens includes phone, tablet, laptop, desktop, TV, watch, and social-asset logical-size presets. Width, height, orientation, top/bottom/side usable-area insets, and keyboard height are editable. TV action/title-safe areas use 5%/10% insets. Platform chrome changes between OS/browser versions, so insets are editable rather than presented as exact universal device specifications.
 
+Open **Screens** from the floating toolbar or the menu bar to pick a phone, tablet, or other size. Each choice shows its dimensions in points and opens a new screen marker at that size. The Screens shortcut opens the standard phone directly. Change an existing marker's size with **Device** and **Apply Template** in the Tool Inspector.
+
 Screens and Loupe offer approximate protanopia, deuteranopia, tritanopia, grayscale, and blurred-vision previews. These are design aids, not clinical simulations. Screens can downsample a Retina capture to simulate a 1× display. Live previews require Screen Recording.
 
 Crosshair follows the pointer and shows coordinates below the intersection, measured from the display's top-left. The label moves above the intersection when it would run off the bottom edge. Press Space to pin it or resume following the pointer, and drag the pinned label to move the crosshair. While editing, click or press O to set a relative origin, then press R to reset it. Relative origins remain correct across displays. Line width is adjustable and respects the Auto contrast preference.
