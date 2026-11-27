@@ -37,3 +37,13 @@ SmartTools is an additional workflow across the suite. xScope can activate or hi
 - [xScope version history](https://xscopeapp.com/history)
 - [xScope Mirror App Store listing](https://apps.apple.com/us/app/xscope-mirror/id488819289)
 - Bundled Help under `/Applications/xScope.app/Contents/Resources`, including the tool tutorials, keyboard reference, and SmartTools.
+
+## Follow-up user request
+
+> try again
+
+Finder responded and opened the installed app, but attaching to xScope by bundle ID or path still timed out. Hands-on results remain pending. The official workflow pages give three additional cases to verify:
+
+- Resize the Loupe view independently of zoom, lock it, then draw a measurement directly over magnified pixels. Schnaps currently draws a fixed 180-point view. [Inspecting guide](https://xscopeapp.com/inspecting)
+- Drag a saved color directly into both a text editor and a native color well. The text target should receive the active output format. [Measuring guide](https://xscopeapp.com/measuring)
+- Toggle independent Screens chrome regions, such as the status bar, lock-screen controls, navigation bar, tab bar, and keyboard, while checking the design in place. [Inspecting guide](https://xscopeapp.com/inspecting)
